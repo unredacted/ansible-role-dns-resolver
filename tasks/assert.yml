@@ -1,12 +1,14 @@
 ---
-- name: Check that the host runs Debian 13
+- name: Check that the host runs Debian 13 on x86_64
   ansible.builtin.assert:
     that:
       - ansible_facts['distribution'] == 'Debian'
       - ansible_facts['distribution_major_version'] == '13'
+      - ansible_facts['architecture'] == 'x86_64'
     fail_msg: >-
-      This role supports Debian 13 (trixie) only. This host runs
-      {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}.
+      This role supports Debian 13 (trixie) on x86_64 only. This host runs
+      {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}
+      on {{ ansible_facts['architecture'] }}.
     quiet: true
 
 - name: Check the host names
@@ -14,6 +16,7 @@
     that:
       - dns_resolver_hostnames is sequence
       - dns_resolver_hostnames is not string
+      - dns_resolver_hostnames is not mapping
       - dns_resolver_hostnames | length > 0
       - dns_resolver_hostnames | select('dns_resolver_valid_hostname') | list | length == dns_resolver_hostnames | length
     fail_msg: >-
@@ -24,8 +27,8 @@
 - name: Check the listen addresses
   ansible.builtin.assert:
     that:
-      - dns_resolver_listen_v4 is sequence and dns_resolver_listen_v4 is not string
-      - dns_resolver_listen_v6 is sequence and dns_resolver_listen_v6 is not string
+      - dns_resolver_listen_v4 is sequence and dns_resolver_listen_v4 is not string and dns_resolver_listen_v4 is not mapping
+      - dns_resolver_listen_v6 is sequence and dns_resolver_listen_v6 is not string and dns_resolver_listen_v6 is not mapping
       - (dns_resolver_listen_v4 + dns_resolver_listen_v6) | length > 0
       - dns_resolver_listen_v4 | reject('dns_resolver_valid_ip', 4) | list | length == 0
       - dns_resolver_listen_v6 | reject('dns_resolver_valid_ip', 6) | list | length == 0
@@ -38,6 +41,8 @@
   ansible.builtin.assert:
     that:
       - dns_resolver_access in ['pilot', 'public']
+      - dns_resolver_pilot_sources_v4 is sequence and dns_resolver_pilot_sources_v4 is not string and dns_resolver_pilot_sources_v4 is not mapping
+      - dns_resolver_pilot_sources_v6 is sequence and dns_resolver_pilot_sources_v6 is not string and dns_resolver_pilot_sources_v6 is not mapping
       - dns_resolver_pilot_sources_v4 | reject('dns_resolver_valid_network', 4) | list | length == 0
       - dns_resolver_pilot_sources_v6 | reject('dns_resolver_valid_network', 6) | list | length == 0
     fail_msg: >-
