@@ -56,6 +56,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # A rerun for the same commit reuses its release (assets are never
+          # replaced) and proposes the sums that were published.
+          existing=$(gh release list --limit 100 --json tagName \
+            --jq "[.[] | select(.tagName | startswith(\"binaries-\") and endswith(\"-${GITHUB_SHA::7}\"))][0].tagName // empty")
+          if [ -n "$existing" ]; then
+            echo "Release ${existing} already exists for this commit; reusing it."
+            mkdir -p published
+            gh release download "$existing" -p SHA256SUMS -D published --clobber
+            echo "tag=$existing" >> "$GITHUB_OUTPUT"
+            echo "sums=published/SHA256SUMS" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           tag="binaries-$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
           {
             echo "Binaries built from ${GITHUB_SHA}."
@@ -71,9 +83,11 @@ jobs:
             artifacts/hickory-dns artifacts/encrypted-dns artifacts/SHA256SUMS \
             artifacts/BUILDINFO artifacts/native-inventory.md artifacts/sbom.tar.gz
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sums=artifacts/SHA256SUMS" >> "$GITHUB_OUTPUT"
 
       - name: Propose the new release in defaults/main.yml
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN || github.token }}
           TAG: ${{ steps.release.outputs.tag }}
-        run: build/scripts/propose-release.sh "$TAG" artifacts/SHA256SUMS
+          SUMS: ${{ steps.release.outputs.sums }}
+        run: build/scripts/propose-release.sh "$TAG" "$SUMS"
