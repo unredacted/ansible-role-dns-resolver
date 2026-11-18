@@ -1,0 +1,36 @@
+---
+# Ask Hickory over DoT on loopback, with the real host name for TLS, for:
+# 1. a signed name, which must come back NOERROR with the AD bit set, and
+# 2. a random name, which must come from the authoritative servers (no cache),
+#    and must not be SERVFAIL.
+
+- name: Look up a signed name over loopback DoT
+  ansible.builtin.command: >-
+    kdig @127.0.0.1 -p {{ dns_resolver_dot_port }} +tls
+    +tls-hostname={{ dns_resolver_hostnames[0] }} +tls-ca={{ dns_resolver_tls_ca_bundle }}
+    +dnssec +timeout=5 +retry=2 {{ dns_resolver_post_check_signed_name }} A
+  register: dns_resolver_check_signed
+  changed_when: false
+  failed_when: >-
+    dns_resolver_check_signed.rc != 0
+    or 'status: NOERROR' not in dns_resolver_check_signed.stdout
+    or not (dns_resolver_check_signed.stdout is search('flags:[^;]* ad[ ;]'))
+  retries: 3
+  delay: 5
+  until: dns_resolver_check_signed is not failed
+
+- name: Look up a random name over loopback DoT
+  ansible.builtin.command: >-
+    kdig @127.0.0.1 -p {{ dns_resolver_dot_port }} +tls
+    +tls-hostname={{ dns_resolver_hostnames[0] }} +tls-ca={{ dns_resolver_tls_ca_bundle }}
+    +timeout=5 +retry=2 {{ dns_resolver_check_label }}.{{ dns_resolver_post_check_nonce_zone }} A
+  vars:
+    dns_resolver_check_label: "{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_lowercase', 'digits'], length=20) }}"
+  register: dns_resolver_check_nonce
+  changed_when: false
+  failed_when: >-
+    dns_resolver_check_nonce.rc != 0
+    or not (dns_resolver_check_nonce.stdout is search('status: (NOERROR|NXDOMAIN)'))
+  retries: 3
+  delay: 5
+  until: dns_resolver_check_nonce is not failed

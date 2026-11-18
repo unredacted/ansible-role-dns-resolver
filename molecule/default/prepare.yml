@@ -1,0 +1,72 @@
+---
+# Give the test container the resolver's public addresses on a veth link, and
+# a "client" network namespace on the other end. Traffic from the namespace
+# reaches the resolver like traffic from the internet would (not over lo), so
+# the pilot allowlist and the rate limits apply to it.
+#
+#   client netns: 198.51.100.10 (allowed in pilot mode), 203.0.113.5 (not allowed)
+#                 2001:db8:1::10 (allowed), 2001:db8:2::5 (not allowed)
+#   resolver:     192.0.2.53, 2001:db8::53
+- name: Prepare
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Install test tools
+      ansible.builtin.apt:
+        name: [iproute2, knot-dnsutils, curl, openssl, python3-cryptography]
+        state: present
+        update_cache: true
+
+    - name: Create the client namespace and link
+      ansible.builtin.shell: |
+        set -euo pipefail
+        ip netns list | grep -qw client && exit 0
+        ip netns add client
+        ip link add vres type veth peer name vcli
+        ip link set vcli netns client
+        ip addr add 192.0.2.53/32 dev vres
+        ip -6 addr add 2001:db8::53/128 dev vres nodad
+        ip link set vres up
+        ip route add 198.51.100.0/24 dev vres
+        ip route add 203.0.113.0/24 dev vres
+        ip -6 route add 2001:db8:1::/48 dev vres
+        ip -6 route add 2001:db8:2::/48 dev vres
+        ip netns exec client sh -c '
+          ip link set lo up
+          ip addr add 198.51.100.10/24 dev vcli
+          ip addr add 203.0.113.5/24 dev vcli
+          ip -6 addr add 2001:db8:1::10/48 dev vcli nodad
+          ip -6 addr add 2001:db8:2::5/48 dev vcli nodad
+          ip link set vcli up
+          ip route add 192.0.2.53/32 dev vcli
+          ip -6 route add 2001:db8::53/128 dev vcli
+        '
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Make a test CA and a certificate for both test names
+      ansible.builtin.shell: |
+        set -eu
+        mkdir -p /root/testca && cd /root/testca
+        test -f fullchain.pem && exit 0
+        openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 30 \
+          -subj "/CN=dns-resolver test CA" -keyout ca.key -out ca.pem
+        openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+          -subj "/CN=dns1.example.net" -keyout privkey.pem -out leaf.csr
+        printf 'subjectAltName=DNS:dns1.example.net,DNS:dns2.example.net\nextendedKeyUsage=serverAuth\n' > leaf.ext
+        openssl x509 -req -in leaf.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 30 \
+          -extfile leaf.ext -out leaf.pem
+        cat leaf.pem ca.pem > fullchain.pem
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Copy the test certificate to the controller for the role
+      ansible.builtin.fetch:
+        src: "/root/testca/{{ item }}"
+        dest: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/tls/"
+        flat: true
+      loop:
+        - fullchain.pem
+        - privkey.pem

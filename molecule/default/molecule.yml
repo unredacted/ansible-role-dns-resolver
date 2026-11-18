@@ -43,6 +43,9 @@ provisioner:
           - 2001:db8:1::/48
         # Test containers see the host's swap, which is often on disk.
         dns_resolver_allow_disk_swap: true
+        dns_resolver_tls_cert_src: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/tls/fullchain.pem"
+        dns_resolver_tls_key_src: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/tls/privkey.pem"
+        dns_resolver_tls_ca_bundle: /root/testca/ca.pem
         dns_resolver_metrics_allowed_sources_v4:
           - 198.51.100.10
         # CI builds the binaries and sets DNS_RESOLVER_ARTIFACTS while the role

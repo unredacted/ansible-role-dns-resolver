@@ -1,0 +1,61 @@
+---
+# Install a certificate and key given as files on the controller. The ACME
+# source (added later) uses the same layout:
+#   {{ dns_resolver_tls_dir }}/releases/<sha256 of the chain>/{fullchain,privkey}.pem
+#   {{ dns_resolver_tls_dir }}/current -> releases/<...>
+# Hickory needs a .pem certificate name, and reads a .key file as DER, so both
+# files are always named .pem.
+
+- name: Check the certificate source
+  ansible.builtin.assert:
+    that:
+      - dns_resolver_tls_cert_src | length > 0
+      - dns_resolver_tls_key_src | length > 0
+    fail_msg: >-
+      With dns_resolver_tls_source "files", set dns_resolver_tls_cert_src and
+      dns_resolver_tls_key_src to the chain and key on the controller.
+    quiet: true
+
+- name: Name the release after the certificate chain
+  ansible.builtin.set_fact:
+    dns_resolver_tls_release: "{{ lookup('ansible.builtin.file', dns_resolver_tls_cert_src) | hash('sha256') }}"
+
+- name: Create the certificate directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: "{{ dns_resolver_hickory_user }}"
+    mode: "0750"
+  loop:
+    - "{{ dns_resolver_tls_dir }}"
+    - "{{ dns_resolver_tls_dir }}/releases"
+    - "{{ dns_resolver_tls_dir }}/releases/{{ dns_resolver_tls_release }}"
+
+- name: Install the certificate chain
+  ansible.builtin.copy:
+    src: "{{ dns_resolver_tls_cert_src }}"
+    dest: "{{ dns_resolver_tls_dir }}/releases/{{ dns_resolver_tls_release }}/fullchain.pem"
+    owner: root
+    group: "{{ dns_resolver_hickory_user }}"
+    mode: "0640"
+
+- name: Install the private key
+  ansible.builtin.copy:
+    src: "{{ dns_resolver_tls_key_src }}"
+    dest: "{{ dns_resolver_tls_dir }}/releases/{{ dns_resolver_tls_release }}/privkey.pem"
+    owner: root
+    group: "{{ dns_resolver_hickory_user }}"
+    mode: "0640"
+  no_log: true
+  diff: false
+
+- name: Point "current" at this certificate
+  ansible.builtin.file:
+    src: "releases/{{ dns_resolver_tls_release }}"
+    dest: "{{ dns_resolver_tls_dir }}/current"
+    state: link
+    force: true
+    owner: root
+    group: "{{ dns_resolver_hickory_user }}"
+  notify: Restart hickory-dns

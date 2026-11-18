@@ -82,3 +82,259 @@
         that:
           - dns_resolver_verify_dropin.stat.exists
         quiet: true
+
+- name: Verify the DNS service
+  hosts: all
+  gather_facts: false
+  vars:
+    resolver_v4: 192.0.2.53
+    resolver_v6: 2001:db8::53
+    hostnames: [dns1.example.net, dns2.example.net]
+    ca: /root/testca/ca.pem
+    in_client: ip netns exec client
+  tasks:
+    - name: Copy the DoH helper
+      ansible.builtin.copy:
+        src: doh_query.py
+        dest: /root/doh_query.py
+        mode: "0644"
+
+    # --- Transports, for each host name and both address families -----------
+
+    - name: DoT answers for each name and family
+      ansible.builtin.command: >-
+        {{ in_client }} kdig @{{ item.1 }} -p 853 +tls +tls-ca={{ ca }} +tls-hostname={{ item.0 }}
+        +timeout=5 +retry=1 +dnssec ietf.org A
+      loop: "{{ hostnames | product([resolver_v4, resolver_v6]) | list }}"
+      register: dot
+      changed_when: false
+      failed_when: >-
+        dot.rc != 0 or 'status: NOERROR' not in dot.stdout
+
+    - name: DoQ answers for each name and family
+      ansible.builtin.command: >-
+        {{ in_client }} kdig @{{ item.1 }} -p 853 +quic +tls-ca={{ ca }} +tls-hostname={{ item.0 }}
+        +timeout=5 +retry=1 ietf.org A
+      loop: "{{ hostnames | product([resolver_v4, resolver_v6]) | list }}"
+      register: doq
+      changed_when: false
+      failed_when: >-
+        doq.rc != 0 or 'status: NOERROR' not in doq.stdout
+
+    - name: DoH POST answers over HTTP/2 for each name and family
+      ansible.builtin.command: >-
+        {{ in_client }} python3 /root/doh_query.py {{ item.0 }} {{ item.1 }} ietf.org POST {{ ca }}
+      loop: "{{ hostnames | product([resolver_v4, resolver_v6]) | list }}"
+      register: doh_post
+      changed_when: false
+      failed_when: >-
+        (doh_post.stdout | from_json).http_code != '200'
+        or (doh_post.stdout | from_json).http_version != '2'
+        or (doh_post.stdout | from_json).rcode != 0
+        or (doh_post.stdout | from_json).answers < 1
+        or not (doh_post.stdout | from_json).ad
+
+    - name: DoH GET is refused (Hickory 0.26 answers POST only)
+      ansible.builtin.command: >-
+        {{ in_client }} python3 /root/doh_query.py {{ hostnames[0] }} {{ resolver_v4 }} ietf.org GET {{ ca }}
+      register: doh_get
+      changed_when: false
+      failed_when: (doh_get.stdout | from_json).http_code == '200'
+
+    # --- Post-quantum key exchange -------------------------------------------
+
+    - name: A post-quantum client gets X25519MLKEM768 over DoT and DoH
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        {{ in_client }} openssl s_client {{ item.flags }} -connect {{ resolver_v4 }}:{{ item.port }}
+        -servername {{ hostnames[0] }} -CAfile {{ ca }} -groups X25519MLKEM768:X25519 </dev/null 2>&1
+        | grep -E 'Negotiated TLS1.3 group|Verify return code'
+      args:
+        executable: /bin/bash
+      loop:
+        - { name: DoT, port: 853, flags: "-alpn dot" }
+        - { name: DoH, port: 443, flags: "-alpn h2" }
+      loop_control:
+        label: "{{ item.name }}"
+      register: pq
+      changed_when: false
+      failed_when: >-
+        'Negotiated TLS1.3 group: X25519MLKEM768' not in pq.stdout
+        or 'Verify return code: 0 (ok)' not in pq.stdout
+
+    # openssl does not print the group for QUIC. The ServerHello size shows it:
+    # an X25519MLKEM768 key share alone is 1120 bytes (ML-KEM-768 ciphertext
+    # plus an X25519 share), while a plain X25519 ServerHello is about 90.
+    - name: A post-quantum client gets X25519MLKEM768 over DoQ
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        {{ in_client }} openssl s_client -quic -alpn doq -connect {{ resolver_v4 }}:853
+        -servername {{ hostnames[0] }} -CAfile {{ ca }} -groups X25519MLKEM768:X25519 -msg </dev/null 2>&1
+        | grep -E 'ServerHello|Verify return code'
+      args:
+        executable: /bin/bash
+      register: pq_quic
+      changed_when: false
+      failed_when: >-
+        'Verify return code: 0 (ok)' not in pq_quic.stdout
+        or (pq_quic.stdout | regex_search('length ([0-9a-f]+)[^,]*, ServerHello', '\\1') | first | int(base=16)) < 1120
+
+    - name: A classic client still connects with X25519
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        {{ in_client }} openssl s_client -alpn dot -connect {{ resolver_v4 }}:853
+        -servername {{ hostnames[0] }} -CAfile {{ ca }} -groups X25519 </dev/null 2>&1
+        | grep 'Negotiated TLS1.3 group'
+      args:
+        executable: /bin/bash
+      register: classic
+      changed_when: false
+      failed_when: "'Negotiated TLS1.3 group: X25519' not in classic.stdout"
+
+    # --- DNSSEC ---------------------------------------------------------------
+
+    - name: Look up DNSSEC test names over DoT
+      ansible.builtin.command: >-
+        {{ in_client }} kdig @{{ resolver_v4 }} -p 853 +tls +tls-ca={{ ca }}
+        +tls-hostname={{ hostnames[0] }} +timeout=8 +retry=1 {{ item.flags }} {{ item.name }} A
+      loop:
+        - { id: signed_do, name: ietf.org, flags: "+dnssec" }
+        - { id: signed_plain, name: ietf.org, flags: "" }
+        - { id: signed_adflag, name: ietf.org, flags: "+adflag" }
+        - { id: bogus, name: dnssec-failed.org, flags: "+dnssec" }
+        - { id: bogus_cd, name: dnssec-failed.org, flags: "+dnssec +cdflag" }
+        - { id: bogus_after_cd, name: dnssec-failed.org, flags: "+dnssec" }
+      loop_control:
+        label: "{{ item.id }}"
+      register: dnssec
+      changed_when: false
+
+    - name: Check the DNSSEC results
+      ansible.builtin.assert:
+        that:
+          - "'status: NOERROR' in r.signed_do and r.signed_do is search('flags:[^;]* ad[ ;]')"
+          - "'status: NOERROR' in r.signed_plain and not (r.signed_plain is search('flags:[^;]* ad[ ;]'))"
+          - "'status: NOERROR' in r.signed_adflag and r.signed_adflag is search('flags:[^;]* ad[ ;]')"
+          - "'status: SERVFAIL' in r.bogus"
+          - "'status: SERVFAIL' in r.bogus_after_cd"
+        quiet: true
+      vars:
+        r: "{{ dict(dnssec.results | map(attribute='item.id') | zip(dnssec.results | map(attribute='stdout'))) }}"
+
+    # --- Exposure and pilot mode ---------------------------------------------
+
+    - name: The plain DNS port is not reachable from outside
+      ansible.builtin.command: >-
+        {{ in_client }} kdig @{{ resolver_v4 }} -p 5300 +timeout=2 +retry=0 ietf.org A
+      register: plain
+      changed_when: false
+      failed_when: plain.rc == 0 and 'status:' in plain.stdout
+
+    - name: A source not on the pilot list gets no answer
+      ansible.builtin.command: >-
+        {{ in_client }} kdig -b {{ item.src }} @{{ item.dst }} -p 853 +tls +tls-ca={{ ca }}
+        +tls-hostname={{ hostnames[0] }} +timeout=2 +retry=0 ietf.org A
+      loop:
+        - { src: 203.0.113.5, dst: "{{ resolver_v4 }}" }
+        - { src: "2001:db8:2::5", dst: "{{ resolver_v6 }}" }
+      register: unlisted
+      changed_when: false
+      failed_when: unlisted.rc == 0 and 'status:' in unlisted.stdout
+
+    # --- Privacy ----------------------------------------------------------------
+
+    - name: Make Hickory hit error paths with a known name and client address
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        {{ in_client }} kdig @{{ resolver_v4 }} -p 853 +tls +tls-ca={{ ca }} +tls-hostname={{ hostnames[0] }}
+        +timeout=5 +retry=0 privacy-canary.dnssec-failed.org A;
+        printf 'GET / HTTP/1.1\r\nHost: x\r\n\r\n' | {{ in_client }} timeout 3 bash -c 'cat > /dev/tcp/{{ resolver_v4 }}/443';
+        {{ in_client }} timeout 3 openssl s_client -connect {{ resolver_v4 }}:443 -alpn nope </dev/null;
+        true
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Write a canary into the DNS journal namespace
+      ansible.builtin.command: >-
+        systemd-run --wait --collect -p LogNamespace=dnsresolver
+        /bin/echo dns-resolver-namespace-canary
+      changed_when: false
+
+    - name: Read the DNS journal namespace
+      ansible.builtin.command: journalctl --namespace=dnsresolver --no-pager -o cat
+      register: ns_journal
+      changed_when: false
+
+    - name: Check that the namespace works and holds no query data
+      ansible.builtin.assert:
+        that:
+          - "'dns-resolver-namespace-canary' in ns_journal.stdout"
+          - "'privacy-canary' not in ns_journal.stdout"
+          - "'198.51.100.10' not in ns_journal.stdout"
+        quiet: true
+
+    - name: Read Hickory's metrics
+      ansible.builtin.uri:
+        url: http://127.0.0.1:9153/metrics
+        return_content: true
+      register: metrics
+
+    - name: Check that the metrics hold no query data
+      ansible.builtin.assert:
+        that:
+          - "'privacy-canary' not in metrics.content"
+          - "'198.51.100.10' not in metrics.content"
+          - "'ietf' not in metrics.content"
+        quiet: true
+
+    - name: Read Hickory's unit settings
+      ansible.builtin.systemd_service:
+        name: hickory-dns.service
+      register: unit_props
+
+    - name: Check that swap and core dumps are off for Hickory
+      ansible.builtin.assert:
+        that:
+          - unit_props.status.MemorySwapMax == '0'
+          - unit_props.status.LimitCORE == '0'
+          - unit_props.status.ActiveState == 'active'
+        quiet: true
+
+    - name: Crash Hickory on purpose
+      ansible.builtin.command: systemctl kill -s SEGV hickory-dns.service
+      changed_when: true
+
+    - name: Wait for Hickory to come back
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 853
+        delay: 3
+        timeout: 60
+
+    - name: Look for core dumps
+      ansible.builtin.find:
+        paths: [/var/lib/systemd/coredump, /var/lib/hickory, /]
+        patterns: ["core*"]
+        file_type: file
+      register: cores
+
+    - name: Check that no core dump was written
+      ansible.builtin.assert:
+        that:
+          - cores.files | length == 0
+        quiet: true
+
+    - name: Score Hickory's sandbox
+      ansible.builtin.command: systemd-analyze security --no-pager hickory-dns.service
+      register: sandbox
+      changed_when: false
+      failed_when: false
+
+    - name: Check the sandbox score
+      ansible.builtin.assert:
+        that:
+          - >-
+            (sandbox.stdout | regex_search('Overall exposure level for [^ ]+ ([0-9.]+)', '\\1') | first | float) <= 2.0
+        fail_msg: "{{ sandbox.stdout_lines | select('search', 'Overall') | list }}"
+        quiet: true

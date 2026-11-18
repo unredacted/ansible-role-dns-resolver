@@ -13,3 +13,12 @@
   ansible.builtin.fail:
     msg: Failing the firewall checks on purpose (dns_resolver_test_fail_firewall_check).
   when: dns_resolver_test_fail_firewall_check | default(false) | bool
+
+- name: Look at Hickory's state
+  ansible.builtin.systemd_service:
+    name: hickory-dns.service
+  register: dns_resolver_fw_hickory
+
+- name: Check that Hickory still resolves through the new policy
+  ansible.builtin.include_tasks: check_resolution.yml
+  when: dns_resolver_fw_hickory.status.ActiveState | default('') == 'active'

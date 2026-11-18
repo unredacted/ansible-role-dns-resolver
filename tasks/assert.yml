@@ -45,6 +45,13 @@
       must hold IPv4 and IPv6 addresses or networks.
     quiet: true
 
+- name: Check the TLS source
+  ansible.builtin.assert:
+    that:
+      - dns_resolver_tls_source in ['files']
+    fail_msg: dns_resolver_tls_source must be "files".
+    quiet: true
+
 - name: Note whether the host is a container
   ansible.builtin.set_fact:
     dns_resolver_in_container: >-

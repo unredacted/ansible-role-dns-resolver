@@ -1,0 +1,80 @@
+---
+- name: Read the root trust anchor
+  ansible.builtin.slurp:
+    src: "{{ dns_resolver_trust_anchor_file }}"
+  register: dns_resolver_trust_anchor
+
+- name: Check that the trust anchor holds the required root keys
+  ansible.builtin.assert:
+    that:
+      - dns_resolver_trust_anchor_required_tags | difference(dns_resolver_anchor_tags) | length == 0
+    fail_msg: >-
+      {{ dns_resolver_trust_anchor_file }} has root keys {{ dns_resolver_anchor_tags }},
+      but {{ dns_resolver_trust_anchor_required_tags }} are required. Update the
+      dns-root-data package.
+    quiet: true
+  vars:
+    dns_resolver_anchor_tags: "{{ dns_resolver_trust_anchor.content | b64decode | dns_resolver_dnskey_tags }}"
+
+- name: Create the Hickory directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: "{{ dns_resolver_hickory_user }}"
+    mode: "0750"
+  loop:
+    - /etc/hickory
+    - /etc/hickory/staging
+
+# --validate parses the configuration and returns before it loads the
+# certificate or opens sockets. The checks after the restart test those.
+- name: Render and check the Hickory configuration
+  ansible.builtin.template:
+    src: hickory/named.toml.j2
+    dest: /etc/hickory/staging/named.toml
+    owner: root
+    group: "{{ dns_resolver_hickory_user }}"
+    mode: "0640"
+    validate: /usr/local/sbin/hickory-dns --validate --disable-prometheus --config %s
+
+- name: Install the Hickory configuration
+  ansible.builtin.copy:
+    src: /etc/hickory/staging/named.toml
+    dest: /etc/hickory/named.toml
+    remote_src: true
+    owner: root
+    group: "{{ dns_resolver_hickory_user }}"
+    mode: "0640"
+  notify: Restart hickory-dns
+
+- name: Install the Hickory unit
+  ansible.builtin.template:
+    src: systemd/hickory-dns.service.j2
+    dest: /etc/systemd/system/hickory-dns.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart hickory-dns
+
+- name: Reload systemd for Hickory
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Enable and start Hickory
+  ansible.builtin.systemd_service:
+    name: hickory-dns.service
+    enabled: true
+    state: started
+
+- name: Apply pending Hickory restarts
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Hickory's DoT listener on loopback
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ dns_resolver_dot_port }}"
+    timeout: 60
+
+- name: Check that Hickory resolves and validates over loopback DoT
+  ansible.builtin.include_tasks: check_resolution.yml
