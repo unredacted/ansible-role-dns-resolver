@@ -187,6 +187,8 @@ dns_resolver_post_check_nonce_zone: example.com
 # --- DNSCrypt (encrypted-dns-server) --------------------------------------------
 
 # Provider name clients see. DNSCrypt requires the "2.dnscrypt-cert." prefix.
+# Stamps contain it, so set it explicitly before publishing. In published mode
+# the role refuses to change it.
 dns_resolver_dnscrypt_provider_name: "2.dnscrypt-cert.{{ dns_resolver_hostnames[0] }}"
 # Also offer post-quantum certificates (X-Wing). Older clients keep using the
 # classic ones.

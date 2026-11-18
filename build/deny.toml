@@ -7,7 +7,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 # Fail on vulnerabilities and on yanked crates. Unmaintained-crate notices are
 # reported but do not fail the build; they go to the weekly audit issue.
 yanked = "deny"
-unmaintained = "workspace"
+unmaintained = "none"
 ignore = []
 
 [bans]

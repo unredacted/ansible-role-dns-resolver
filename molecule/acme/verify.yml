@@ -161,3 +161,23 @@
           - observed.probe_failed.pid == observed.offline.pid
           - observed.probe_failed.metrics is search('dns_resolver_tls_probe_success[{]listener="doq"[^}]*[}] 0')
         quiet: true
+
+    # 7. A new host name gets a new certificate at once, not when the old one
+    #    is due for renewal.
+    - name: Sync with an extra host name
+      ansible.builtin.command: "{{ cert }} sync"
+      environment:
+        RENEW_DAYS: "0"
+        HOSTNAMES: dns1.example.net dns2.example.net dns3.example.net
+      changed_when: true
+
+    - name: Read the names in the installed certificate
+      ansible.builtin.command: openssl x509 -in /etc/dns-resolver/tls/current/fullchain.pem -noout -ext subjectAltName
+      register: extra_sans
+      changed_when: false
+
+    - name: Check that the new name is covered
+      ansible.builtin.assert:
+        that:
+          - "'DNS:dns3.example.net' in extra_sans.stdout"
+        quiet: true

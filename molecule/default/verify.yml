@@ -22,12 +22,19 @@
       register: dns_resolver_verify_versions
       changed_when: false
 
+    # The expected versions come from the build inputs, so a version bump
+    # only needs to change build/versions.yml.
     - name: Check the binary versions
       ansible.builtin.assert:
         that:
-          - "'0.26.3' in dns_resolver_verify_versions.results[0].stdout"
-          - "'0.9.22' in dns_resolver_verify_versions.results[1].stdout"
+          - dns_resolver_build.hickory.version in dns_resolver_verify_versions.results[0].stdout
+          - dns_resolver_build.encrypted_dns.version in dns_resolver_verify_versions.results[1].stdout
         quiet: true
+      vars:
+        dns_resolver_build: >-
+          {{ lookup('ansible.builtin.file',
+                    lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') ~ '/build/versions.yml')
+             | from_yaml }}
 
     - name: Read the policy files
       ansible.builtin.slurp:
@@ -134,12 +141,21 @@
         or (doh_post.stdout | from_json).answers < 1
         or not (doh_post.stdout | from_json).ad
 
-    - name: DoH GET is refused (Hickory 0.26 answers POST only)
+    # dns_resolver_doh_get_supported comes from the role defaults: false means
+    # GET must be refused, true means it must answer like POST.
+    - name: DoH GET matches dns_resolver_doh_get_supported
       ansible.builtin.command: >-
         {{ in_client }} python3 /root/doh_query.py {{ hostnames[0] }} {{ resolver_v4 }} ietf.org GET {{ ca }}
       register: doh_get
       changed_when: false
-      failed_when: (doh_get.stdout | from_json).http_code == '200'
+      failed_when: >-
+        ((doh_get.stdout | from_json).http_code == '200') != get_supported
+        or (get_supported and (doh_get.stdout | from_json).rcode != 0)
+      vars:
+        get_supported: >-
+          {{ (lookup('ansible.builtin.file',
+                     lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') ~ '/defaults/main.yml')
+              | from_yaml).dns_resolver_doh_get_supported | bool }}
 
     # --- Post-quantum key exchange -------------------------------------------
 
@@ -384,7 +400,7 @@
 
     - name: Read the provider public key
       ansible.builtin.slurp:
-        src: /var/lib/encrypted-dns/provider.pub
+        src: /var/lib/dns-resolver/dnscrypt/provider.pub
       register: pub
 
     - name: Write a dnscrypt-proxy config pinned to our stamps

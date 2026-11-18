@@ -12,10 +12,13 @@ StartLimitBurst=5
 Type=exec
 User={{ dns_resolver_dnscrypt_user }}
 Group={{ dns_resolver_dnscrypt_user }}
-# The checks run as root (the + prefix) so they can write the metrics file.
+# The checks run as root (the + prefix) so they can write the metrics file and
+# keep their copy of the state in a directory the service account cannot touch.
+# The post-start check waits until encrypted-dns answers a certificate query,
+# which it does only after loading (or replacing) its state.
 ExecStartPre=+/usr/bin/python3 /usr/local/libexec/dns-resolver/dnscrypt-state-check.py pre /var/lib/encrypted-dns/encrypted-dns.state {{ dns_resolver_dnscrypt_provider_pubkey if dns_resolver_dnscrypt_published else '-' }} {{ dns_resolver_textfile_dir }}
 ExecStart=/usr/local/sbin/encrypted-dns --config /etc/encrypted-dns/encrypted-dns.toml
-ExecStartPost=+/usr/bin/python3 /usr/local/libexec/dns-resolver/dnscrypt-state-check.py post /var/lib/encrypted-dns/encrypted-dns.state {{ dns_resolver_dnscrypt_provider_pubkey if dns_resolver_dnscrypt_published else '-' }} {{ dns_resolver_textfile_dir }}
+ExecStartPost=+/usr/bin/python3 /usr/local/libexec/dns-resolver/dnscrypt-state-check.py post /var/lib/encrypted-dns/encrypted-dns.state {{ dns_resolver_dnscrypt_provider_pubkey if dns_resolver_dnscrypt_published else '-' }} {{ dns_resolver_textfile_dir }} --probe {{ (dns_resolver_listen_v4 + dns_resolver_listen_v6) | first }} {{ dns_resolver_dnscrypt_port }} {{ dns_resolver_dnscrypt_provider_name }}
 Restart=always
 RestartSec=2
 

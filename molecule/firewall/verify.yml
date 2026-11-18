@@ -35,6 +35,23 @@
           ansible.builtin.fail:
             msg: The role finished although the firewall checks failed.
       rescue:
+        # Only the deliberate check failure counts. A failure anywhere else
+        # (rendering, loading) would leave the pilot policy in place and make
+        # the checks below pass without testing the rollback.
+        - name: Read the staged candidate
+          ansible.builtin.slurp:
+            src: /etc/nftables.d/staging/dns-resolver.nft
+          register: dns_resolver_verify_staged
+
+        - name: Check that the rollback came from the deliberate check failure
+          ansible.builtin.assert:
+            that:
+              - "'previous policy was restored' in (ansible_failed_result.msg | default(''))"
+              - "'public firewall policy' in (ansible_failed_result.msg | default(''))"
+              - "'Mode: public' in (dns_resolver_verify_staged.content | b64decode)"
+            fail_msg: "The role failed for another reason: {{ ansible_failed_result.msg | default(ansible_failed_result) }}"
+            quiet: true
+
         - name: Note the expected failure
           ansible.builtin.set_fact:
             dns_resolver_rollback_seen: true
@@ -83,4 +100,23 @@
       ansible.builtin.assert:
         that:
           - snapshots.reloaded.rules == snapshots.before.rules
+        quiet: true
+
+    - name: Remove the live table, as a hand edit or another tool might
+      ansible.builtin.command: nft delete table inet dns_resolver
+      changed_when: true
+
+    - name: Run the role again
+      ansible.builtin.include_role:
+        name: "{{ dns_resolver_role }}"
+
+    - name: Record the state after the repair
+      ansible.builtin.include_tasks: tasks/snapshot.yml
+      vars:
+        snapshot_name: repaired
+
+    - name: Check that the role restored the pilot policy
+      ansible.builtin.assert:
+        that:
+          - snapshots.repaired.rules == snapshots.before.rules
         quiet: true

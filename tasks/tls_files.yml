@@ -50,6 +50,25 @@
   no_log: true
   diff: false
 
+# Check the staged pair before Hickory uses it, so a bad certificate leaves the
+# previous one in place: not expired, key matches, chain verifies against the
+# CA bundle, and every host name is covered.
+- name: Check the staged certificate and key
+  ansible.builtin.shell: |
+    set -euo pipefail
+    dir={{ (dns_resolver_tls_dir ~ '/releases/' ~ dns_resolver_tls_release) | quote }}
+    openssl x509 -in "$dir/fullchain.pem" -noout -checkend 0
+    [ "$(openssl x509 -in "$dir/fullchain.pem" -noout -pubkey)" = "$(openssl pkey -in "$dir/privkey.pem" -pubout)" ] \
+      || { echo "the private key does not match the certificate" >&2; exit 1; }
+    openssl verify -CAfile {{ dns_resolver_tls_ca_bundle | quote }} -untrusted "$dir/fullchain.pem" "$dir/fullchain.pem"
+    for name in {{ dns_resolver_hostnames | map('quote') | join(' ') }}; do
+      openssl x509 -in "$dir/fullchain.pem" -noout -checkhost "$name" | grep -q ' does match ' \
+        || { echo "the certificate does not cover $name" >&2; exit 1; }
+    done
+  args:
+    executable: /bin/bash
+  changed_when: false
+
 - name: Point "current" at this certificate
   ansible.builtin.file:
     src: "releases/{{ dns_resolver_tls_release }}"
@@ -59,3 +78,31 @@
     owner: root
     group: "{{ dns_resolver_hickory_user }}"
   notify: Restart hickory-dns
+
+# A host that used ACME before keeps its renewal timer, which would put the
+# ACME certificate back. Turn it off and drop the provider secrets.
+- name: Look for the ACME renewal timer
+  ansible.builtin.stat:
+    path: /etc/systemd/system/dns-resolver-cert-sync.timer
+  register: dns_resolver_acme_timer
+
+- name: Stop and disable the ACME renewal timer
+  ansible.builtin.systemd_service:
+    name: dns-resolver-cert-sync.timer
+    state: stopped
+    enabled: false
+  when: dns_resolver_acme_timer.stat.exists
+
+- name: Remove the ACME renewal units and provider secrets
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/dns-resolver-cert-sync.timer
+    - /etc/systemd/system/dns-resolver-cert-sync.service
+    - /etc/dns-resolver/acme.env
+
+- name: Reload systemd after removing the ACME units
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: dns_resolver_acme_timer.stat.exists

@@ -17,13 +17,8 @@
     group: root
     mode: "0755"
 
-- name: Create the node_exporter textfile directory
-  ansible.builtin.file:
-    path: "{{ dns_resolver_textfile_dir }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
+- name: Make sure the node_exporter textfile directory exists
+  ansible.builtin.import_tasks: textfile_dir.yml
 
 - name: Install the DNSCrypt state check
   ansible.builtin.copy:
@@ -43,6 +38,41 @@
   loop:
     - { path: /etc/encrypted-dns, owner: root, mode: "0755" }
     - { path: /var/lib/encrypted-dns, owner: "{{ dns_resolver_dnscrypt_user }}", mode: "0700" }
+    # The state check's own directory: its copy of the state, the provider
+    # key record and the alert marker. Only root can write here.
+    - { path: /var/lib/dns-resolver, owner: root, mode: "0755" }
+    - { path: /var/lib/dns-resolver/dnscrypt, owner: root, mode: "0700" }
+
+# A stamp holds the provider name as well as the key. Once published, a change
+# of name (for example after reordering dns_resolver_hostnames) would break
+# every stamp, so the name in use is recorded and must not change.
+- name: Read the recorded provider name
+  ansible.builtin.slurp:
+    src: /var/lib/dns-resolver/dnscrypt/provider.name
+  register: dns_resolver_dnscrypt_recorded_name
+  failed_when: false
+
+- name: Check that a published provider name is unchanged
+  ansible.builtin.assert:
+    that:
+      - not dns_resolver_dnscrypt_published
+        or dns_resolver_dnscrypt_recorded_name.content is not defined
+        or (dns_resolver_dnscrypt_recorded_name.content | b64decode | trim) == dns_resolver_dnscrypt_provider_name
+    fail_msg: >-
+      The DNSCrypt provider name would change from
+      {{ dns_resolver_dnscrypt_recorded_name.content | default('') | b64decode | trim }} to
+      {{ dns_resolver_dnscrypt_provider_name }}, which breaks every published stamp. Set
+      dns_resolver_dnscrypt_provider_name to the old name, or set
+      dns_resolver_dnscrypt_published to false to start a new identity on purpose.
+    quiet: true
+
+- name: Record the provider name
+  ansible.builtin.copy:
+    dest: /var/lib/dns-resolver/dnscrypt/provider.name
+    content: "{{ dns_resolver_dnscrypt_provider_name }}\n"
+    owner: root
+    group: root
+    mode: "0644"
 
 - name: Look for the DNSCrypt state
   ansible.builtin.stat:
@@ -135,7 +165,7 @@
 
 - name: Read the provider public key
   ansible.builtin.slurp:
-    src: /var/lib/encrypted-dns/provider.pub
+    src: /var/lib/dns-resolver/dnscrypt/provider.pub
   register: dns_resolver_dnscrypt_pub
   when: not dns_resolver_dnscrypt_published
 

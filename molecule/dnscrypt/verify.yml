@@ -8,7 +8,7 @@
   tasks:
     - name: Read the pinned key
       ansible.builtin.slurp:
-        src: /var/lib/encrypted-dns/provider.pub
+        src: /var/lib/dns-resolver/dnscrypt/provider.pub
       register: pub
 
     - name: Keep the pinned key and a good copy of the state
