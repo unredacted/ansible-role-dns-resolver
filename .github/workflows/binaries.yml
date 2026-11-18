@@ -1,0 +1,61 @@
+---
+name: Binaries
+
+# Reusable: checks the upstream copy and builds both binaries, then uploads
+# them as the "binaries" artifact. Used by build.yml (releases) and ci.yml
+# (test binaries). Needs only read access.
+'on':
+  workflow_call:
+    inputs:
+      use_cache:
+        description: >-
+          Reuse binaries built earlier from the same build/ inputs. For test
+          runs only; releases always build from scratch.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Upstream copy check
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Entrypoint matches upstream
+        run: build/checks/entrypoint-drift.sh
+
+  build:
+    name: Build
+    needs: checks
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Look for binaries built from the same inputs
+        id: cache
+        if: inputs.use_cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: artifacts/
+          key: test-binaries-${{ hashFiles('build/**') }}
+
+      - name: Build in the pinned builder image
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: build/run.sh
+
+      - name: Upload the binaries
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: binaries
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14

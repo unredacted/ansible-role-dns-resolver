@@ -1,0 +1,47 @@
+# Build wrapper for the hickory-dns binary.
+#
+# This crate exists so the binary is built from a lockfile that lives in this
+# repository, which lets Dependabot propose dependency updates. It does not
+# change Hickory's code: src/main.rs is an unmodified copy of upstream's
+# bin/src/hickory-dns.rs at the version below, and CI checks that it still is.
+[package]
+name = "hickory-dns-build"
+version = "0.26.3"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "hickory-dns"
+path = "src/main.rs"
+
+[dependencies]
+hickory-dns = { version = "=0.26.3", default-features = false, features = [
+  "recursor",
+  "prometheus-metrics",
+  "systemd",
+  "tls-aws-lc-rs",
+  "https-aws-lc-rs",
+  "quic-aws-lc-rs",
+  "dnssec-aws-lc-rs",
+  "rustls-platform-verifier",
+] }
+# Prefer the hybrid post-quantum key exchange (X25519MLKEM768) over X25519.
+rustls = { version = "0.23.23", default-features = false, features = ["aws_lc_rs", "prefer-post-quantum", "std", "tls12", "logging"] }
+# Direct imports of the copied entrypoint, with upstream's version requirements.
+clap = { version = "4.0", default-features = false, features = ["cargo", "derive", "help", "std", "suggestions"] }
+tokio = { version = "1.36", features = ["time", "rt", "rt-multi-thread", "signal"] }
+tracing = { version = "0.1.30", default-features = false }
+tracing-subscriber = { version = "0.3.10", default-features = false, features = ["env-filter", "fmt", "std"] }
+
+[lints.rust]
+# The copied entrypoint has an optional jemalloc allocator behind a feature
+# this wrapper does not define. Declare it so the check does not warn.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("jemalloc"))'] }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+panic = "unwind"
+strip = "debuginfo"

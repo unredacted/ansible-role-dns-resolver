@@ -1,0 +1,42 @@
+# cargo-deny settings for the release binaries.
+
+[graph]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[advisories]
+# Fail on vulnerabilities and on yanked crates. Unmaintained-crate notices are
+# reported but do not fail the build; they go to the weekly audit issue.
+yanked = "deny"
+unmaintained = "none"
+ignore = []
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+# hickory-dns must use aws-lc-rs as its only TLS crypto provider, because ring
+# has no post-quantum key exchange. This ban applies to the hickory-dns build.
+deny = [
+  { crate = "ring", reason = "aws-lc-rs is the TLS crypto provider (post-quantum key exchange)" },
+]
+
+[licenses]
+confidence-threshold = 0.9
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  "Zlib",
+  "MPL-2.0",
+  "CDLA-Permissive-2.0",
+  "0BSD",
+  "BSL-1.0",
+  "CC0-1.0",
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
