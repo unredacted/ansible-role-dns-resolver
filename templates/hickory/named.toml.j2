@@ -1,0 +1,59 @@
+# {{ ansible_managed }}
+# Hickory DNS: recursive resolver with DNSSEC validation.
+# Serves DNS-over-TLS, DNS-over-QUIC and DNS-over-HTTPS (POST only) on the
+# public addresses. Plain DNS is only for programs on this host.
+
+listen_addrs_ipv4 = {{ (['127.0.0.1'] + dns_resolver_listen_v4) | to_json }}
+listen_addrs_ipv6 = {{ (['::1'] + dns_resolver_listen_v6) | to_json }}
+listen_port = {{ dns_resolver_plain_loopback_port }}
+tls_listen_port = {{ dns_resolver_dot_port }}
+quic_listen_port = {{ dns_resolver_doq_port }}
+https_listen_port = {{ dns_resolver_doh_port }}
+http_endpoint = {{ dns_resolver_doh_path | to_json }}
+{% if not dns_resolver_dnscrypt_enabled %}
+# Nothing on this host needs plain DNS.
+disable_udp = true
+disable_tcp = true
+{% endif %}
+{% set metrics_host = ('[' ~ dns_resolver_metrics_listen ~ ']') if ':' in dns_resolver_metrics_listen else dns_resolver_metrics_listen %}
+prometheus_listen_addr = {{ (metrics_host ~ ':' ~ dns_resolver_hickory_metrics_port) | to_json }}
+tcp_request_timeout = {{ dns_resolver_hickory_request_timeout }}
+directory = "/var/lib/hickory"
+# systemd starts Hickory as its own user, so there is nothing to drop.
+drop_privileges = false
+
+[tls_cert]
+path = "{{ dns_resolver_tls_dir }}/current/fullchain.pem"
+private_key = "{{ dns_resolver_tls_dir }}/current/privkey.pem"
+
+[udp_socket]
+recv_buffer_size = 4194304
+send_buffer_size = 4194304
+
+[tcp_socket]
+listen_backlog = 4096
+
+[[zones]]
+zone = "."
+zone_type = "External"
+
+[zones.stores]
+type = "recursor"
+roots = "/usr/share/dns/root.hints"
+ns_cache_size = {{ dns_resolver_hickory_ns_cache_size }}
+response_cache_size = {{ dns_resolver_hickory_response_cache_size }}
+recursion_limit = {{ dns_resolver_hickory_recursion_limit }}
+ns_recursion_limit = {{ dns_resolver_hickory_ns_recursion_limit }}
+qname_minimization = {{ dns_resolver_qname_minimization | to_json }}
+case_randomization = true
+# Hickory's built-in list of networks it never queries, plus our own.
+# Setting deny_server replaces the built-in list, so it is repeated here.
+{% set own = (dns_resolver_listen_v4 | map('regex_replace', '$', '/32') | list)
+             + (dns_resolver_listen_v6 | map('regex_replace', '$', '/128') | list) %}
+deny_server = {{ (dns_resolver_recursor_deny_default + dns_resolver_recursor_deny_extra
+                  + own + dns_resolver_deny_servers_extra) | unique | list | to_json }}
+
+[zones.stores.dnssec_policy.ValidateWithStaticKey]
+path = "{{ dns_resolver_trust_anchor_file }}"
+nsec3_soft_iteration_limit = 100
+nsec3_hard_iteration_limit = 500

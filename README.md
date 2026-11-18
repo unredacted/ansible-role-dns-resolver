@@ -91,6 +91,21 @@ for each one.
 | `dns_resolver_access` | `pilot` | `pilot` allows only the listed sources. `public` allows everyone. |
 | `dns_resolver_pilot_sources_v4` | `[]` | IPv4 sources allowed in pilot mode. |
 | `dns_resolver_pilot_sources_v6` | `[]` | IPv6 sources allowed in pilot mode. |
+| `dns_resolver_mgmt_interface` | `""` | Interface for SSH and metrics. Empty means any interface. |
+| `dns_resolver_mgmt_tcp_ports` | `[22]` | SSH and other management TCP ports. |
+| `dns_resolver_mgmt_udp_ports` | `[]` | UDP ports to accept from anywhere, such as a VPN port. |
+| `dns_resolver_metrics_listen` | `127.0.0.1` | Address of the metrics endpoints. |
+| `dns_resolver_metrics_allowed_sources_v4` / `_v6` | `[]` | Who may scrape metrics. |
+| `dns_resolver_meter_pps` / `_burst` | `300` / `600` | Packets per second per source (IPv6 per /64). |
+| `dns_resolver_conn_cap_per_source` | `32` | Open connections per source. |
+| `dns_resolver_tls_source` | `files` | Where the certificate comes from. |
+| `dns_resolver_tls_cert_src` / `_key_src` | `""` | Chain and key on the controller (`files` source). |
+| `dns_resolver_qname_minimization` | `Relaxed` | `Strict` or `Relaxed`. |
+| `dns_resolver_deny_servers_extra` | `[]` | More networks Hickory must never query. |
+| `dns_resolver_trust_anchor_required_tags` | `[38696]` | Root key tags the trust anchor file must contain. |
+| `dns_resolver_hickory_memory_max` | `2G` | Memory limit for Hickory. |
+| `dns_resolver_allow_disk_swap` | `false` | Allow running with swap on disk. |
+| `dns_resolver_binary_release` and the URL and SHA-256 variables | set by CI | The pinned binary release. |
 
 ## Binaries
 
@@ -147,6 +162,11 @@ Molecule needs Docker. The tests run in a Debian 13 container with systemd.
 
 - We do not log DNS queries or client IP addresses. The programs keep some
   state in memory to answer queries and limit abuse.
+- Hickory logs query names at warning level on some errors, so the role turns
+  off logging for its request-handling modules. What is left goes to a journal
+  namespace kept in memory. Core dumps are not stored, and swap is turned off
+  for the DNS programs.
+- The metrics endpoints carry only totals, never names or addresses.
 - Encryption covers the connection between the client and this resolver. To
   find answers, the resolver asks other DNS servers from its own address,
   without encryption, and sends only as much of the name as each step needs.

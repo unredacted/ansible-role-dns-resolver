@@ -101,3 +101,85 @@ dns_resolver_journal_max_retention: 1h
 # The role refuses to run on a host with swap on disk, because memory pages
 # holding DNS data could be written there. Set to true to allow it.
 dns_resolver_allow_disk_swap: false
+
+# --- Hickory ------------------------------------------------------------------
+
+dns_resolver_doh_path: /dns-query
+# Hickory 0.26 answers DoH POST only. Set to true after upgrading to a release
+# that also answers GET; the tests then require GET to work.
+dns_resolver_doh_get_supported: false
+
+# Strict stops at the first NXDOMAIN (RFC 8020). Relaxed keeps going, which
+# works better with broken name servers.
+dns_resolver_qname_minimization: Relaxed
+dns_resolver_hickory_recursion_limit: 24
+dns_resolver_hickory_ns_recursion_limit: 24
+dns_resolver_hickory_ns_cache_size: 16384
+dns_resolver_hickory_response_cache_size: 1048576
+dns_resolver_hickory_request_timeout: 5
+
+# Networks Hickory never sends queries to. Setting deny_server replaces
+# Hickory's built-in list, so this is a copy of it (Hickory 0.26.3,
+# crates/resolver/src/recursor/mod.rs, RECOMMENDED_SERVER_FILTERS).
+# CI checks that it still matches upstream.
+dns_resolver_recursor_deny_default:
+  - 127.0.0.0/8
+  - 0.0.0.0/8
+  - 255.255.255.255/32
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+  - 100.64.0.0/10
+  - 169.254.0.0/16
+  - 192.0.0.0/24
+  - 192.0.2.0/24
+  - 198.51.100.0/24
+  - 203.0.113.0/24
+  - 240.0.0.0/4
+  - ::1/128
+  - ::/128
+  - 100::/64
+  - 2001:db8::/32
+  - 3fff::/20
+  - 5f00::/16
+  - fc00::/7
+  - fe80::/64
+  - ff00::/8
+# Added by this role on top of Hickory's list.
+dns_resolver_recursor_deny_extra:
+  - 198.18.0.0/15
+  - 224.0.0.0/4
+  - ::ffff:0:0/96
+# Your own additions.
+dns_resolver_deny_servers_extra: []
+
+# The root trust anchor from Debian's dns-root-data package. The role checks
+# that it contains the listed key tags (38696 is the 2024 root KSK).
+dns_resolver_trust_anchor_file: /usr/share/dns/root.key
+dns_resolver_trust_anchor_required_tags:
+  - 38696
+
+dns_resolver_hickory_log_filter: >-
+  hickory_dns=info,hickory_server=off,hickory_resolver=off,hickory_proto=off,hickory_net=off,h2=off,quinn=off,rustls=off
+dns_resolver_hickory_memory_high: 1536M
+dns_resolver_hickory_memory_max: 2G
+dns_resolver_hickory_tasks_max: 4096
+
+# --- TLS ----------------------------------------------------------------------
+
+dns_resolver_tls_dir: /etc/dns-resolver/tls
+# Where the role gets the TLS certificate. "files" copies a certificate and key
+# from the controller (dns_resolver_tls_cert_src, dns_resolver_tls_key_src).
+dns_resolver_tls_source: files
+dns_resolver_tls_cert_src: ""
+dns_resolver_tls_key_src: ""
+# CA bundle the role uses to check the certificate the services present.
+dns_resolver_tls_ca_bundle: /etc/ssl/certs/ca-certificates.crt
+
+# --- Checks -------------------------------------------------------------------
+
+# A signed name that must validate (AD bit set) after each change.
+dns_resolver_post_check_signed_name: ietf.org
+# A zone under which a random label is looked up, so the answer cannot come
+# from the cache. Any NOERROR or NXDOMAIN answer passes; SERVFAIL fails.
+dns_resolver_post_check_nonce_zone: example.com

@@ -29,6 +29,17 @@
 
 # Tags on include_tasks select the include only; apply passes them on to the
 # included tasks.
+- name: Install the TLS certificate
+  ansible.builtin.include_tasks:
+    file: "tls_{{ dns_resolver_tls_source }}.yml"
+    apply:
+      tags: [dns_resolver, dns_resolver_tls]
+  tags: [dns_resolver, dns_resolver_tls]
+
+- name: Set up Hickory
+  ansible.builtin.import_tasks: hickory.yml
+  tags: [dns_resolver, dns_resolver_hickory]
+
 - name: Apply the full firewall policy
   ansible.builtin.include_tasks:
     file: firewall_apply.yml
