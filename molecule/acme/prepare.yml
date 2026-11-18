@@ -72,7 +72,7 @@
       ansible.builtin.shell: |
         set -euo pipefail
         systemctl is-active -q challtestsrv || systemd-run --unit=challtestsrv \
-          /usr/local/bin/pebble-challtestsrv -dns01 127.0.0.1:8053 -management 127.0.0.1:8055 \
+          /usr/local/bin/pebble-challtestsrv -dnsserver 127.0.0.1:8053 -management 127.0.0.1:8055 \
           -http01 "" -https01 "" -tlsalpn01 "" -doh "" -defaultIPv4 127.0.0.1 -defaultIPv6 ""
         systemctl is-active -q pebble || systemd-run --unit=pebble \
           -E PEBBLE_VA_NOSLEEP=1 -E PEBBLE_WFE_NONCEREJECT=0 -E PEBBLE_VA_ALWAYS_VALID=0 \
@@ -81,11 +81,12 @@
         executable: /bin/bash
       changed_when: true
 
-    - name: Wait for Pebble
+    - name: Wait for Pebble and challtestsrv
       ansible.builtin.wait_for:
         host: 127.0.0.1
-        port: 15000
+        port: "{{ item }}"
         timeout: 60
+      loop: [14000, 15000, 8055]
 
     - name: Save Pebble's root certificate, which signs the test certificates
       ansible.builtin.shell: >-
