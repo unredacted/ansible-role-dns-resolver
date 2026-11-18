@@ -212,9 +212,9 @@
     - name: Check the DNSSEC results
       ansible.builtin.assert:
         that:
-          - "'status: NOERROR' in r.signed_do and r.signed_do is search('flags:[^;]* ad[ ;]')"
-          - "'status: NOERROR' in r.signed_plain and not (r.signed_plain is search('flags:[^;]* ad[ ;]'))"
-          - "'status: NOERROR' in r.signed_adflag and r.signed_adflag is search('flags:[^;]* ad[ ;]')"
+          - "'status: NOERROR' in r.signed_do and r.signed_do is search('Flags: [^;]* ad[ ;]')"
+          - "'status: NOERROR' in r.signed_plain and not (r.signed_plain is search('Flags: [^;]* ad[ ;]'))"
+          - "'status: NOERROR' in r.signed_adflag and r.signed_adflag is search('Flags: [^;]* ad[ ;]')"
           - "'status: SERVFAIL' in r.bogus"
           - "'status: SERVFAIL' in r.bogus_after_cd"
         quiet: true

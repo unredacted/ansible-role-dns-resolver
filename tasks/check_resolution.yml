@@ -14,7 +14,7 @@
   failed_when: >-
     dns_resolver_check_signed.rc != 0
     or 'status: NOERROR' not in dns_resolver_check_signed.stdout
-    or not (dns_resolver_check_signed.stdout is search('flags:[^;]* ad[ ;]'))
+    or not (dns_resolver_check_signed.stdout is search('Flags: [^;]* ad[ ;]'))
   retries: 3
   delay: 5
   until: dns_resolver_check_signed is not failed
