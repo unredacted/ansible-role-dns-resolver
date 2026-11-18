@@ -62,8 +62,9 @@ tar -xzf "$work/edns.crate" -C "$work"
 cd "$work/encrypted-dns-${edns_version}"
 test -f Cargo.lock || { echo "the crate has no Cargo.lock" >&2; exit 1; }
 cp /src/build/deny.toml deny.toml
+# Lockfile check with the reasoned exceptions in build/deny.toml. The shipped
+# binary is checked without exceptions by `cargo audit bin` below.
 cargo deny --locked check advisories
-cargo audit --deny warnings --file Cargo.lock
 cargo auditable build --locked --release --target "$target"
 install -m 0755 "target/$target/release/encrypted-dns" "$out/encrypted-dns"
 cargo cyclonedx --format json --target "$target" --override-filename encrypted-dns.cdx
