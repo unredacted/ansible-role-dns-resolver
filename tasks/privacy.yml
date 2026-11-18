@@ -1,0 +1,29 @@
+---
+- name: Create the systemd drop-in directories
+  ansible.builtin.file:
+    path: /etc/systemd/coredump.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Turn off core dump storage
+  ansible.builtin.copy:
+    dest: /etc/systemd/coredump.conf.d/dns-resolver.conf
+    content: |
+      # Managed by ansible-role-dns-resolver. Local changes are overwritten.
+      # Core dumps could contain DNS queries. Do not keep them.
+      [Coredump]
+      Storage=none
+      ProcessSizeMax=0
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Write the journal settings for the DNS services
+  ansible.builtin.template:
+    src: journald-namespace.conf.j2
+    dest: "/etc/systemd/journald@{{ dns_resolver_journal_namespace }}.conf"
+    owner: root
+    group: root
+    mode: "0644"

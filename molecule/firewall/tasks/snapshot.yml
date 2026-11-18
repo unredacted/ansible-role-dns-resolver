@@ -1,0 +1,23 @@
+---
+- name: Read the committed policy
+  ansible.builtin.slurp:
+    src: /etc/nftables.d/dns-resolver.nft
+  register: snapshot_committed
+
+# Rules only: -t leaves out set elements, and counter values are blanked,
+# because both change with traffic.
+- name: List the live rules
+  ansible.builtin.shell: >-
+    set -o pipefail &&
+    nft -t list table inet dns_resolver | sed -E 's/counter packets [0-9]+ bytes [0-9]+/counter/'
+  args:
+    executable: /bin/bash
+  register: snapshot_rules
+  changed_when: false
+
+- name: Store the snapshot
+  ansible.builtin.set_fact:
+    snapshots: >-
+      {{ snapshots | default({}) | combine({snapshot_name: {
+           'committed': snapshot_committed.content | b64decode,
+           'rules': snapshot_rules.stdout}}) }}

@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+# Journal namespace for the DNS services. It stays in memory and is short-lived.
+# The services log warnings and errors only. Collectors that read the default
+# journal do not see this namespace.
+[Journal]
+Storage=volatile
+RuntimeMaxUse={{ dns_resolver_journal_max_use }}
+MaxRetentionSec={{ dns_resolver_journal_max_retention }}
+ForwardToSyslog=no
+ForwardToKMsg=no
+ForwardToConsole=no
+ForwardToWall=no

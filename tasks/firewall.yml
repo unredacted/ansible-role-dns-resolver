@@ -1,0 +1,85 @@
+---
+# Set up the firewall unit and, on a new host, a management-only baseline.
+# The full policy (pilot or public) is applied at the end of the role, after
+# the DNS services have started. See firewall_apply.yml for how a policy is
+# loaded and rolled back.
+
+- name: Create the nftables directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop:
+    - /etc/nftables.d
+    - /etc/nftables.d/staging
+
+- name: Look at Debian's nftables service
+  ansible.builtin.systemd_service:
+    name: nftables.service
+  register: dns_resolver_debian_nftables
+  failed_when: false
+
+# Debian's unit flushes the whole ruleset when it stops, which would also
+# remove other tables (for example a VPN's). Clear that before touching it.
+- name: Create the drop-in directory for Debian's nftables service
+  ansible.builtin.file:
+    path: /etc/systemd/system/nftables.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: dns_resolver_debian_nftables.status.LoadState | default('') == 'loaded'
+
+- name: Keep Debian's nftables service from flushing the ruleset on stop
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/nftables.service.d/dns-resolver.conf
+    content: |
+      # Managed by ansible-role-dns-resolver. Local changes are overwritten.
+      [Service]
+      ExecStop=
+    owner: root
+    group: root
+    mode: "0644"
+  when: dns_resolver_debian_nftables.status.LoadState | default('') == 'loaded'
+  register: dns_resolver_nftables_dropin
+
+- name: Install the firewall unit
+  ansible.builtin.template:
+    src: systemd/dns-resolver-firewall.service.j2
+    dest: /etc/systemd/system/dns-resolver-firewall.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: dns_resolver_fw_unit
+
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: dns_resolver_fw_unit is changed or dns_resolver_nftables_dropin is changed
+
+- name: Stop Debian's nftables service from loading at boot
+  ansible.builtin.systemd_service:
+    name: nftables.service
+    enabled: false
+  when: dns_resolver_debian_nftables.status.UnitFileState | default('') == 'enabled'
+
+- name: Enable the firewall unit
+  ansible.builtin.systemd_service:
+    name: dns-resolver-firewall.service
+    enabled: true
+
+- name: Check for a committed policy
+  ansible.builtin.stat:
+    path: /etc/nftables.d/dns-resolver.nft
+  register: dns_resolver_fw_committed
+
+- name: Apply the management-only baseline on a new host
+  ansible.builtin.include_tasks:
+    file: firewall_apply.yml
+    apply:
+      tags: [dns_resolver, dns_resolver_firewall]
+  vars:
+    dns_resolver_fw_mode: baseline
+  when: not dns_resolver_fw_committed.stat.exists

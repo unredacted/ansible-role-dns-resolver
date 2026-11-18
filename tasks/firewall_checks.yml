@@ -1,0 +1,15 @@
+---
+# Checks that must pass after a new firewall policy is loaded.
+
+- name: Drop the current management connection
+  ansible.builtin.meta: reset_connection
+
+- name: Open a new management connection
+  ansible.builtin.wait_for_connection:
+    timeout: 30
+
+# Used by the tests to exercise the rollback path.
+- name: Fail on purpose when testing the rollback
+  ansible.builtin.fail:
+    msg: Failing the firewall checks on purpose (dns_resolver_test_fail_firewall_check).
+  when: dns_resolver_test_fail_firewall_check | default(false) | bool

@@ -1,0 +1,20 @@
+---
+# policy_rc_d 101 keeps Debian from starting anything a package ships.
+- name: Install packages
+  ansible.builtin.apt:
+    name:
+      - nftables
+      - dns-root-data
+      - knot-dnsutils
+      - lego
+      - openssl
+      - curl
+      - ca-certificates
+      - python3
+      - procps
+      - kmod
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    install_recommends: false
+    policy_rc_d: 101

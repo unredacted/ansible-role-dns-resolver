@@ -1,0 +1,12 @@
+---
+# In a container the host owns some of these keys, so errors are only fatal on
+# a real host or VM.
+- name: Apply the kernel settings
+  ansible.builtin.command: sysctl -e -p /etc/sysctl.d/60-dns-resolver.conf
+  register: dns_resolver_sysctl_apply
+  changed_when: true
+  failed_when: dns_resolver_sysctl_apply.rc != 0 and not dns_resolver_in_container
+
+- name: Restart the DNS services
+  ansible.builtin.debug:
+    msg: The DNS services are not installed by this version of the role yet.

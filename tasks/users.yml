@@ -1,0 +1,11 @@
+---
+- name: Create the service users
+  ansible.builtin.user:
+    name: "{{ item }}"
+    system: true
+    create_home: false
+    home: /nonexistent
+    shell: /usr/sbin/nologin
+  loop:
+    - "{{ dns_resolver_hickory_user }}"
+    - "{{ dns_resolver_dnscrypt_user }}"

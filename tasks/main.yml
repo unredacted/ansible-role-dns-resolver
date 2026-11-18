@@ -2,3 +2,38 @@
 - name: Check the host and the role variables
   ansible.builtin.import_tasks: assert.yml
   tags: [dns_resolver, dns_resolver_assert]
+
+- name: Create the service users
+  ansible.builtin.import_tasks: users.yml
+  tags: [dns_resolver, dns_resolver_users]
+
+- name: Install packages
+  ansible.builtin.import_tasks: packages.yml
+  tags: [dns_resolver, dns_resolver_packages]
+
+- name: Install the binaries
+  ansible.builtin.import_tasks: binaries.yml
+  tags: [dns_resolver, dns_resolver_binaries]
+
+- name: Apply kernel settings
+  ansible.builtin.import_tasks: sysctl.yml
+  tags: [dns_resolver, dns_resolver_sysctl]
+
+- name: Set up logging, core dump and swap policy
+  ansible.builtin.import_tasks: privacy.yml
+  tags: [dns_resolver, dns_resolver_privacy]
+
+- name: Set up the firewall (baseline on a new host)
+  ansible.builtin.import_tasks: firewall.yml
+  tags: [dns_resolver, dns_resolver_firewall]
+
+# Tags on include_tasks select the include only; apply passes them on to the
+# included tasks.
+- name: Apply the full firewall policy
+  ansible.builtin.include_tasks:
+    file: firewall_apply.yml
+    apply:
+      tags: [dns_resolver, dns_resolver_firewall]
+  vars:
+    dns_resolver_fw_mode: "{{ dns_resolver_access }}"
+  tags: [dns_resolver, dns_resolver_firewall]

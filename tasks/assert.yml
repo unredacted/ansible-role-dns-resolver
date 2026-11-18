@@ -49,3 +49,29 @@
       dns_resolver_access must be pilot or public, and the pilot source lists
       must hold IPv4 and IPv6 addresses or networks.
     quiet: true
+
+- name: Note whether the host is a container
+  ansible.builtin.set_fact:
+    dns_resolver_in_container: >-
+      {{ ansible_facts['virtualization_role'] | default('') == 'guest'
+         and ansible_facts['virtualization_type'] | default('') in ['docker', 'podman', 'container', 'containerd', 'lxc'] }}
+
+- name: Read the active swap areas
+  ansible.builtin.slurp:
+    src: /proc/swaps
+  register: dns_resolver_proc_swaps
+
+# /proc/swaps lists one area per line after the header. zram lives in memory.
+- name: Refuse to run with swap on disk
+  ansible.builtin.assert:
+    that:
+      - dns_resolver_allow_disk_swap or dns_resolver_disk_swap | length == 0
+    fail_msg: >-
+      This host has swap on disk ({{ dns_resolver_disk_swap | join(', ') }}).
+      Memory holding DNS data could be written to it. Turn that swap off, use
+      zram, or set dns_resolver_allow_disk_swap to true.
+    quiet: true
+  vars:
+    dns_resolver_disk_swap: >-
+      {{ (dns_resolver_proc_swaps.content | b64decode).splitlines()[1:]
+         | map('split') | map('first') | reject('match', '^/dev/zram') | list }}
