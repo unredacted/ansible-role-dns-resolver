@@ -51,10 +51,16 @@
         mkdir -p /root/testca && cd /root/testca
         test -f fullchain.pem && exit 0
         openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 30 \
-          -subj "/CN=dns-resolver test CA" -keyout ca.key -out ca.pem
+          -subj "/CN=dns-resolver test CA" -addext "basicConstraints=critical,CA:TRUE" \
+          -addext "keyUsage=critical,keyCertSign,cRLSign" -keyout ca.key -out ca.pem
         openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
           -subj "/CN=dns1.example.net" -keyout privkey.pem -out leaf.csr
-        printf 'subjectAltName=DNS:dns1.example.net,DNS:dns2.example.net\nextendedKeyUsage=serverAuth\n' > leaf.ext
+        # Python's ssl (used by the role's checks) verifies strictly, so the
+        # test certificates carry the usual extensions.
+        printf '%s\n' 'subjectAltName=DNS:dns1.example.net,DNS:dns2.example.net' \
+          'keyUsage=critical,digitalSignature' 'extendedKeyUsage=serverAuth' \
+          'basicConstraints=critical,CA:FALSE' 'authorityKeyIdentifier=keyid' \
+          'subjectKeyIdentifier=hash' > leaf.ext
         openssl x509 -req -in leaf.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 30 \
           -extfile leaf.ext -out leaf.pem
         cat leaf.pem ca.pem > fullchain.pem
