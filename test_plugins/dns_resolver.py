@@ -36,7 +36,9 @@ def valid_hostname(value):
     """True if value is a fully qualified DNS name with at least two labels."""
     if not isinstance(value, str):
         return False
-    name = value.lower().rstrip(".")
+    name = value.lower()
+    if name.endswith("."):
+        name = name[:-1]  # one trailing root dot is allowed; "a.b.." is not
     if not name or len(name) > 253:
         return False
     labels = name.split(".")
