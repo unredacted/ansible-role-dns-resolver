@@ -110,6 +110,10 @@
     mode: "0644"
   notify: Restart encrypted-dns
 
+- name: Note that the encrypted-dns unit is installed
+  ansible.builtin.set_fact:
+    dns_resolver_edns_unit_installed: true
+
 - name: Reload systemd for encrypted-dns
   ansible.builtin.systemd_service:
     daemon_reload: true
