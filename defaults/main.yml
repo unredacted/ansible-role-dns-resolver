@@ -1,0 +1,27 @@
+---
+# Defaults for ansible-role-dns-resolver.
+#
+# Every variable starts with dns_resolver_. The README lists them in one table.
+# Example values use documentation names and addresses (example.net,
+# 192.0.2.0/24, 2001:db8::/32). Replace them with your own.
+
+# --- Identity -----------------------------------------------------------------
+
+# Names clients use to reach this server. All of them go into the TLS
+# certificate, and every TLS transport is tested against each one.
+dns_resolver_hostnames: []
+#  - dns1.example.net
+
+# Public addresses the resolver listens on. At least one is required.
+dns_resolver_listen_v4: []
+#  - 192.0.2.53
+dns_resolver_listen_v6: []
+#  - 2001:db8::53
+
+# --- Access -------------------------------------------------------------------
+
+# pilot: only the sources below may use the resolver.
+# public: anyone may use it (rate limits still apply).
+dns_resolver_access: pilot
+dns_resolver_pilot_sources_v4: []
+dns_resolver_pilot_sources_v6: []

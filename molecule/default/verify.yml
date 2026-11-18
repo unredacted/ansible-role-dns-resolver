@@ -1,0 +1,11 @@
+---
+- name: Verify
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Check that systemd manages services in the test container
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['service_mgr'] == 'systemd'
+          - ansible_facts['distribution_release'] == 'trixie'
+        quiet: true

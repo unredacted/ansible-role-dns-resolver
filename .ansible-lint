@@ -1,0 +1,11 @@
+---
+profile: production
+
+exclude_paths:
+  - .ansible/
+  - .venv/
+  - .github/
+  - build/
+
+enable_list:
+  - no-log-password

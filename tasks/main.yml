@@ -1,0 +1,4 @@
+---
+- name: Check the host and the role variables
+  ansible.builtin.import_tasks: assert.yml
+  tags: [dns_resolver, dns_resolver_assert]

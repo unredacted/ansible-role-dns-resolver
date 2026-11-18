@@ -1,0 +1,6 @@
+.ansible/
+.venv/
+__pycache__/
+*.pyc
+target/
+artifacts/
