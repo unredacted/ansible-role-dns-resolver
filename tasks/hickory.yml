@@ -16,6 +16,22 @@
   vars:
     dns_resolver_anchor_tags: "{{ dns_resolver_trust_anchor.content | b64decode | dns_resolver_dnskey_tags }}"
 
+- name: Create the helper directory
+  ansible.builtin.file:
+    path: /usr/local/libexec/dns-resolver
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the DoT query helper used by the checks
+  ansible.builtin.copy:
+    src: dns-resolver-query.py
+    dest: /usr/local/libexec/dns-resolver/dns-resolver-query.py
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Create the Hickory directories
   ansible.builtin.file:
     path: "{{ item }}"
