@@ -4,4 +4,6 @@ Description=Write DNS resolver metrics for node_exporter
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 /usr/local/libexec/dns-resolver/dns-resolver-metrics.py {{ dns_resolver_textfile_dir }} {{ dns_resolver_trust_anchor_file }} hickory-dns.service{% if dns_resolver_dnscrypt_enabled %} encrypted-dns.service{% endif %}
+{# Quote paths for systemd: keeps spaces together; \, ", % and $ are escaped. #}
+{% macro q(value) %}"{{ value | replace('\\', '\\\\') | replace('"', '\\"') | replace('%', '%%') | replace('$', '$$') }}"{% endmacro %}
+ExecStart=/usr/bin/python3 /usr/local/libexec/dns-resolver/dns-resolver-metrics.py {{ q(dns_resolver_textfile_dir) }} {{ q(dns_resolver_trust_anchor_file) }} hickory-dns.service{% if dns_resolver_dnscrypt_enabled %} encrypted-dns.service{% endif %}
