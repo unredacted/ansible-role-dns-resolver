@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Renew and check the DNS resolver's TLS certificate
+
+[Timer]
+OnCalendar={{ dns_resolver_cert_sync_oncalendar }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

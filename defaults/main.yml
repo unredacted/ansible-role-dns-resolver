@@ -217,3 +217,26 @@ dns_resolver_dnscrypt_cache_ttl_error: 2
 dns_resolver_dnscrypt_memory_high: 512M
 dns_resolver_dnscrypt_memory_max: 768M
 dns_resolver_dnscrypt_tasks_max: 1024
+
+# --- ACME (dns_resolver_tls_source: acme) -----------------------------------------
+
+# lego gets the certificate with a DNS-01 challenge. Any lego DNS provider
+# works; see https://go-acme.github.io/lego/dns/
+dns_resolver_acme_server: https://acme-v02.api.letsencrypt.org/directory
+dns_resolver_acme_email: ""
+dns_resolver_acme_provider: ""
+# The provider's settings and secrets, for example
+#   CF_DNS_API_TOKEN: "..."   (Cloudflare)
+# Written to /etc/dns-resolver/acme.env, readable by root only.
+dns_resolver_acme_env: {}
+dns_resolver_acme_key_type: ec256
+# Resolvers lego asks to see the challenge record. Empty uses the system's.
+dns_resolver_acme_dns_resolvers: []
+dns_resolver_acme_renew_days: 30
+dns_resolver_lego_path: /var/lib/lego
+# When the renewal timer runs. Pick a different time on each server, so they
+# never restart Hickory at the same moment.
+dns_resolver_cert_sync_oncalendar: "*-*-* 03:00:00"
+# Skip lego's own check that the challenge record reached every authoritative
+# server. Only for test setups whose DNS server is not a real authority.
+dns_resolver_acme_disable_propagation_check: false

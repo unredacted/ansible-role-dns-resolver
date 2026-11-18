@@ -1,0 +1,163 @@
+---
+- name: Verify certificate issuance, renewal and rollback
+  hosts: all
+  gather_facts: false
+  vars:
+    cert: /usr/local/sbin/dns-resolver-cert
+  tasks:
+    # 1. First issuance, then a sync with nothing to renew.
+    - name: Sync with nothing to do
+      ansible.builtin.command: "{{ cert }} sync"
+      changed_when: false
+
+    - name: Observe after the first sync
+      ansible.builtin.include_tasks: tasks/observe.yml
+      vars:
+        label: start
+
+    - name: Check that every listener serves the installed certificate
+      ansible.builtin.assert:
+        that:
+          - observed.start.served == observed.start.installed
+          - observed.start.metrics | regex_findall('dns_resolver_tls_leaf_match[{][^}]*[}] 1') | length == 12
+          - observed.start.metrics | regex_findall('dns_resolver_tls_leaf_match[{][^}]*[}] 0') | length == 0
+          - "'dns_resolver_tls_acme_renew_success 1' in observed.start.metrics"
+        quiet: true
+
+    # 2. A forced renewal is installed, Hickory restarts, and the new
+    #    certificate is served.
+    - name: Force a renewal
+      ansible.builtin.command: "{{ cert }} sync"
+      environment:
+        RENEW_DAYS: "999"
+      changed_when: true
+
+    - name: Observe after the renewal
+      ansible.builtin.include_tasks: tasks/observe.yml
+      vars:
+        label: renewed
+
+    - name: Check the renewal
+      ansible.builtin.assert:
+        that:
+          - observed.renewed.release != observed.start.release
+          - observed.renewed.pid != observed.start.pid
+          - observed.renewed.served == observed.renewed.installed
+        quiet: true
+
+    # 3. Preflight failure: the issued key does not match the certificate.
+    #    Nothing is switched, Hickory is not restarted.
+    - name: Get a new certificate without installing it
+      ansible.builtin.command: "{{ cert }} renew"
+      environment:
+        RENEW_DAYS: "999"
+      changed_when: true
+
+    - name: Replace the issued key with an unrelated one
+      ansible.builtin.command: >-
+        openssl ecparam -name prime256v1 -genkey -noout
+        -out /var/lib/lego/certificates/dns1.example.net.key
+      changed_when: true
+
+    - name: Sync with the mismatched key
+      ansible.builtin.command: "{{ cert }} sync"
+      environment:
+        RENEW_DAYS: "0"
+      register: mismatched
+      changed_when: false
+      failed_when: mismatched.rc == 0
+
+    - name: Observe after the preflight failure
+      ansible.builtin.include_tasks: tasks/observe.yml
+      vars:
+        label: preflight
+
+    - name: Check that nothing changed
+      ansible.builtin.assert:
+        that:
+          - observed.preflight.release == observed.renewed.release
+          - observed.preflight.pid == observed.renewed.pid
+          - observed.preflight.served == observed.renewed.installed
+          - "'dns_resolver_tls_activation_failed 1' in observed.preflight.metrics"
+        quiet: true
+
+    # 4. Post-switch failure: the checks after the switch fail, so the
+    #    previous certificate is put back and served again.
+    - name: Get a valid new certificate without installing it
+      ansible.builtin.command: "{{ cert }} renew"
+      environment:
+        RENEW_DAYS: "999"
+      changed_when: true
+
+    - name: Sync with failing checks after the switch
+      ansible.builtin.command: "{{ cert }} sync"
+      environment:
+        RENEW_DAYS: "0"
+        DNS_RESOLVER_TEST_FAIL_POSTCHECK: "1"
+      register: postcheck
+      changed_when: true
+      failed_when: postcheck.rc == 0
+
+    - name: Observe after the rollback
+      ansible.builtin.include_tasks: tasks/observe.yml
+      vars:
+        label: rolled_back
+
+    - name: Check that the previous certificate is back
+      ansible.builtin.assert:
+        that:
+          - observed.rolled_back.release == observed.renewed.release
+          - observed.rolled_back.served == observed.renewed.installed
+        quiet: true
+
+    # 5. The ACME server is down, but lego already holds a newer certificate:
+    #    it is still installed.
+    - name: Sync while the ACME server cannot be reached
+      ansible.builtin.command: "{{ cert }} sync"
+      environment:
+        RENEW_DAYS: "999"
+        ACME_SERVER: https://localhost:1/dir
+      changed_when: true
+
+    - name: Observe after the offline sync
+      ansible.builtin.include_tasks: tasks/observe.yml
+      vars:
+        label: offline
+
+    - name: Check that the pending certificate was installed anyway
+      ansible.builtin.assert:
+        that:
+          - observed.offline.release != observed.renewed.release
+          - observed.offline.served == observed.offline.installed
+          - "'dns_resolver_tls_acme_renew_success 0' in observed.offline.metrics"
+        quiet: true
+
+    # 6. A probe that gets no answer is reported, and never restarts Hickory.
+    - name: Block DoQ on loopback for a moment
+      ansible.builtin.shell: >-
+        nft add table inet probe_test &&
+        nft add chain inet probe_test input '{ type filter hook input priority -10; }' &&
+        nft add rule inet probe_test input udp dport 853 drop
+      changed_when: true
+
+    - name: Sync with DoQ unreachable
+      ansible.builtin.command: "{{ cert }} sync"
+      environment:
+        RENEW_DAYS: "0"
+      changed_when: false
+
+    - name: Unblock DoQ
+      ansible.builtin.command: nft delete table inet probe_test
+      changed_when: true
+
+    - name: Observe after the failed probes
+      ansible.builtin.include_tasks: tasks/observe.yml
+      vars:
+        label: probe_failed
+
+    - name: Check that Hickory was not restarted and the failure was reported
+      ansible.builtin.assert:
+        that:
+          - observed.probe_failed.pid == observed.offline.pid
+          - observed.probe_failed.metrics is search('dns_resolver_tls_probe_success[{]listener="doq"[^}]*[}] 0')
+        quiet: true

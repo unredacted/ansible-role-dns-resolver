@@ -1,0 +1,75 @@
+---
+- name: Check the ACME settings
+  ansible.builtin.assert:
+    that:
+      - dns_resolver_acme_email | length > 0
+      - dns_resolver_acme_provider | length > 0
+      - dns_resolver_acme_env is mapping
+    fail_msg: >-
+      With dns_resolver_tls_source "acme", set dns_resolver_acme_email,
+      dns_resolver_acme_provider (a lego DNS provider) and
+      dns_resolver_acme_env (its settings).
+    quiet: true
+
+- name: Create the certificate directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/dns-resolver, group: root, mode: "0755" }
+    - { path: "{{ dns_resolver_tls_dir }}", group: "{{ dns_resolver_hickory_user }}", mode: "0750" }
+    - { path: "{{ dns_resolver_tls_dir }}/releases", group: "{{ dns_resolver_hickory_user }}", mode: "0750" }
+    - { path: "{{ dns_resolver_lego_path }}", group: root, mode: "0700" }
+
+- name: Write the certificate settings
+  ansible.builtin.template:
+    src: cert.env.j2
+    dest: /etc/dns-resolver/cert.env
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Write the ACME provider secrets
+  ansible.builtin.template:
+    src: acme.env.j2
+    dest: /etc/dns-resolver/acme.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  diff: false
+
+- name: Install the certificate script
+  ansible.builtin.copy:
+    src: dns-resolver-cert.sh
+    dest: /usr/local/sbin/dns-resolver-cert
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Get and install the first certificate
+  ansible.builtin.command: /usr/local/sbin/dns-resolver-cert install
+  args:
+    creates: "{{ dns_resolver_tls_dir }}/current"
+  notify: Restart hickory-dns
+
+- name: Install the renewal units
+  ansible.builtin.template:
+    src: "systemd/{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - dns-resolver-cert-sync.service
+    - dns-resolver-cert-sync.timer
+
+- name: Enable the renewal timer
+  ansible.builtin.systemd_service:
+    name: dns-resolver-cert-sync.timer
+    enabled: true
+    state: started
+    daemon_reload: true

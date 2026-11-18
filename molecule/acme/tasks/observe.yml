@@ -1,0 +1,34 @@
+---
+# Record what is installed and what is served, under observed[<label>].
+- name: Read Hickory's main PID
+  ansible.builtin.systemd_service:
+    name: hickory-dns.service
+  register: obs_unit
+
+- name: Read the current certificate and the served one
+  ansible.builtin.shell: >-
+    set -o pipefail;
+    readlink -f /etc/dns-resolver/tls/current;
+    openssl x509 -in /etc/dns-resolver/tls/current/fullchain.pem -noout -fingerprint -sha256 | cut -d= -f2;
+    openssl s_client -alpn dot -connect 192.0.2.53:853 -servername dns1.example.net </dev/null 2>/dev/null
+    | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2
+  args:
+    executable: /bin/bash
+  register: obs_certs
+  changed_when: false
+
+- name: Read the TLS metrics
+  ansible.builtin.slurp:
+    src: /var/lib/prometheus/node-exporter/dns_resolver_tls.prom
+  register: obs_metrics
+  failed_when: false
+
+- name: Store the observation
+  ansible.builtin.set_fact:
+    observed: >-
+      {{ observed | default({}) | combine({label: {
+           'pid': obs_unit.status.MainPID,
+           'release': obs_certs.stdout_lines[0],
+           'installed': obs_certs.stdout_lines[1],
+           'served': obs_certs.stdout_lines[2] | default(''),
+           'metrics': (obs_metrics.content | default('') | b64decode)}}) }}
