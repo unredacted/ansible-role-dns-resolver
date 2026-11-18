@@ -62,20 +62,22 @@ tar -xzf "$work/edns.crate" -C "$work"
 cd "$work/encrypted-dns-${edns_version}"
 test -f Cargo.lock || { echo "the crate has no Cargo.lock" >&2; exit 1; }
 # This lockfile comes from upstream, and it includes build-time crates that do
-# not end up in the binary. Report its advisories without failing; the gate
-# for what ships is `cargo audit bin` on the built binary, further down.
-cp /src/build/deny.toml deny.toml
-if ! cargo deny --locked check advisories 2> "$work/edns-lockfile-advisories.txt"; then
-  echo "encrypted-dns lockfile advisories (reported, checked again on the binary):"
-  grep -E "^(error|warning)\[|ID: RUSTSEC|── " "$work/edns-lockfile-advisories.txt" || true
-fi
+# not end up in the binary. Vulnerabilities in runtime crates fail the build;
+# the rest is reported (see build/checks/runtime-advisories.py).
+runtime_advisories() {
+  cargo tree -q --locked --target "$target" -e normal --prefix none --format '{p}' \
+    | awk '{ sub(/^v/, "", $2); print $1 "@" $2 }' | sort -u > "$work/$1-runtime.txt"
+  cargo audit --json --file Cargo.lock > "$work/$1-audit.json" || true
+  python3 /src/build/checks/runtime-advisories.py "$work/$1-audit.json" "$work/$1-runtime.txt" "$1" \
+    | tee "$work/$1-advisories.txt"
+}
+runtime_advisories encrypted-dns
 cargo auditable build --locked --release --target "$target"
 install -m 0755 "target/$target/release/encrypted-dns" "$out/encrypted-dns"
 cargo cyclonedx --format json --target "$target" --override-filename encrypted-dns.cdx
 mv encrypted-dns.cdx.json "$out/sbom/"
 
 cd "$out"
-cargo audit bin hickory-dns encrypted-dns
 cp /src/build/native-inventory.md "$out/"
 {
   echo "hickory-dns ${hickory_version}"
@@ -85,8 +87,8 @@ cp /src/build/native-inventory.md "$out/"
   cargo --version
   echo "source ${SOURCE_COMMIT:-unknown}"
   echo
-  echo "encrypted-dns lockfile advisories (build or runtime; the binary passed cargo audit bin):"
-  grep -oE "RUSTSEC-[0-9]{4}-[0-9]{4}" "$work/edns-lockfile-advisories.txt" | sort -u || true
+  echo
+  cat "$work/encrypted-dns-advisories.txt"
 } > BUILDINFO
 sha256sum hickory-dns encrypted-dns > SHA256SUMS
 cat SHA256SUMS
