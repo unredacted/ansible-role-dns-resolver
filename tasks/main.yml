@@ -54,3 +54,11 @@
   vars:
     dns_resolver_fw_mode: "{{ dns_resolver_access }}"
   tags: [dns_resolver, dns_resolver_firewall]
+
+- name: Set up the metrics collector
+  ansible.builtin.import_tasks: observability.yml
+  tags: [dns_resolver, dns_resolver_observability]
+
+- name: Write and show the DNS stamps
+  ansible.builtin.import_tasks: outputs.yml
+  tags: [dns_resolver, dns_resolver_outputs]

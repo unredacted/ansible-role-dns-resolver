@@ -52,7 +52,7 @@ table inet dns_resolver {
     type filter hook input priority filter; policy drop;
     iif lo accept
     # The plain DNS port is for local programs only.
-    meta l4proto { tcp, udp } th dport {{ dns_resolver_plain_loopback_port }} counter drop
+    meta l4proto { tcp, udp } th dport {{ dns_resolver_plain_loopback_port }} counter drop comment "plain_port"
     {{ mgmt_if }}tcp dport { {{ dns_resolver_mgmt_tcp_ports | join(', ') }} } accept
 {% if dns_resolver_metrics_allowed_sources_v4 %}
     {{ mgmt_if }}ip saddr @metrics4 tcp dport { {{ metrics_ports | join(', ') }} } accept
@@ -82,25 +82,25 @@ table inet dns_resolver {
   chain service {
 {% if dns_resolver_fw_mode == 'pilot' %}
 {% if dns_resolver_pilot_sources_v4 %}
-    meta nfproto ipv4 ip saddr != @pilot4 counter drop
+    meta nfproto ipv4 ip saddr != @pilot4 counter drop comment "pilot"
 {% else %}
-    meta nfproto ipv4 counter drop
+    meta nfproto ipv4 counter drop comment "pilot"
 {% endif %}
 {% if dns_resolver_pilot_sources_v6 %}
-    meta nfproto ipv6 ip6 saddr != @pilot6 counter drop
+    meta nfproto ipv6 ip6 saddr != @pilot6 counter drop comment "pilot"
 {% else %}
-    meta nfproto ipv6 counter drop
+    meta nfproto ipv6 counter drop comment "pilot"
 {% endif %}
 {% endif %}
-    meta nfproto ipv4 update @meter4 { ip saddr limit rate over {{ dns_resolver_meter_pps }}/second burst {{ dns_resolver_meter_burst }} packets } counter drop
-    meta nfproto ipv6 update @meter6 { ip6 saddr and ffff:ffff:ffff:ffff:: limit rate over {{ dns_resolver_meter_pps }}/second burst {{ dns_resolver_meter_burst }} packets } counter drop
+    meta nfproto ipv4 update @meter4 { ip saddr limit rate over {{ dns_resolver_meter_pps }}/second burst {{ dns_resolver_meter_burst }} packets } counter drop comment "packet_rate"
+    meta nfproto ipv6 update @meter6 { ip6 saddr and ffff:ffff:ffff:ffff:: limit rate over {{ dns_resolver_meter_pps }}/second burst {{ dns_resolver_meter_burst }} packets } counter drop comment "packet_rate"
     ct state established,related accept
-    ct state new meta nfproto ipv4 add @conn4 { ip saddr ct count over {{ dns_resolver_conn_cap_per_source }} } counter drop
-    ct state new meta nfproto ipv6 add @conn6 { ip6 saddr and ffff:ffff:ffff:ffff:: ct count over {{ dns_resolver_conn_cap_per_source }} } counter drop
-    ct state new meta nfproto ipv4 update @newconn4 { ip saddr limit rate over {{ dns_resolver_newconn_rate }}/second burst {{ dns_resolver_newconn_burst }} packets } counter drop
-    ct state new meta nfproto ipv6 update @newconn6 { ip6 saddr and ffff:ffff:ffff:ffff:: limit rate over {{ dns_resolver_newconn_rate }}/second burst {{ dns_resolver_newconn_burst }} packets } counter drop
+    ct state new meta nfproto ipv4 add @conn4 { ip saddr ct count over {{ dns_resolver_conn_cap_per_source }} } counter drop comment "conn_cap"
+    ct state new meta nfproto ipv6 add @conn6 { ip6 saddr and ffff:ffff:ffff:ffff:: ct count over {{ dns_resolver_conn_cap_per_source }} } counter drop comment "conn_cap"
+    ct state new meta nfproto ipv4 update @newconn4 { ip saddr limit rate over {{ dns_resolver_newconn_rate }}/second burst {{ dns_resolver_newconn_burst }} packets } counter drop comment "new_conn_rate"
+    ct state new meta nfproto ipv6 update @newconn6 { ip6 saddr and ffff:ffff:ffff:ffff:: limit rate over {{ dns_resolver_newconn_rate }}/second burst {{ dns_resolver_newconn_burst }} packets } counter drop comment "new_conn_rate"
     ct state new accept
-    counter drop
+    counter drop comment "other"
   }
 {% endif %}
 
@@ -109,15 +109,15 @@ table inet dns_resolver {
     type filter hook output priority filter; policy accept;
     ct state established,related accept
     # Hickory may only query DNS servers on public addresses.
-    meta skuid "{{ dns_resolver_hickory_user }}" ip daddr @deny4 counter drop
-    meta skuid "{{ dns_resolver_hickory_user }}" ip6 daddr @deny6 counter drop
+    meta skuid "{{ dns_resolver_hickory_user }}" ip daddr @deny4 counter drop comment "egress_denied"
+    meta skuid "{{ dns_resolver_hickory_user }}" ip6 daddr @deny6 counter drop comment "egress_denied"
 {% if dns_resolver_mgmt_interface | length > 0 %}
-    meta skuid "{{ dns_resolver_hickory_user }}" oifname "{{ dns_resolver_mgmt_interface }}" counter drop
+    meta skuid "{{ dns_resolver_hickory_user }}" oifname "{{ dns_resolver_mgmt_interface }}" counter drop comment "egress_denied"
 {% endif %}
     meta skuid "{{ dns_resolver_hickory_user }}" meta l4proto { tcp, udp } th dport 53 accept
-    meta skuid "{{ dns_resolver_hickory_user }}" counter drop
+    meta skuid "{{ dns_resolver_hickory_user }}" counter drop comment "egress_denied"
     # encrypted-dns may only talk to Hickory's plain port on loopback.
     meta skuid "{{ dns_resolver_dnscrypt_user }}" ip daddr 127.0.0.1 meta l4proto { tcp, udp } th dport {{ dns_resolver_plain_loopback_port }} accept
-    meta skuid "{{ dns_resolver_dnscrypt_user }}" counter drop
+    meta skuid "{{ dns_resolver_dnscrypt_user }}" counter drop comment "egress_denied"
   }
 }

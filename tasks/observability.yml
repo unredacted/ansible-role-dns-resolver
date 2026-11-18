@@ -1,0 +1,37 @@
+---
+- name: Create the helper and textfile directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /usr/local/libexec/dns-resolver
+    - "{{ dns_resolver_textfile_dir }}"
+
+- name: Install the metrics collector
+  ansible.builtin.copy:
+    src: dns-resolver-metrics.py
+    dest: /usr/local/libexec/dns-resolver/dns-resolver-metrics.py
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the metrics units
+  ansible.builtin.template:
+    src: "systemd/{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - dns-resolver-metrics.service
+    - dns-resolver-metrics.timer
+
+- name: Enable the metrics timer
+  ansible.builtin.systemd_service:
+    name: dns-resolver-metrics.timer
+    enabled: true
+    state: started
+    daemon_reload: true
