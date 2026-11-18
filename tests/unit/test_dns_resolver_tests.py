@@ -45,6 +45,9 @@ class ValidHostname(unittest.TestCase):
         self.assertFalse(plugin.valid_hostname("bad_.example.net"))
         self.assertFalse(plugin.valid_hostname("a" * 64 + ".example.net"))
         self.assertFalse(plugin.valid_hostname(""))
+        self.assertFalse(plugin.valid_hostname("."))
+        self.assertFalse(plugin.valid_hostname("dns1.example.net.."))
+        self.assertFalse(plugin.valid_hostname("dns1..example.net"))
 
 
 if __name__ == "__main__":
