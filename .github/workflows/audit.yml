@@ -35,7 +35,9 @@ jobs:
           gh release download "$tag" -p hickory-dns -p encrypted-dns -D bin
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           set +e
-          cargo audit bin bin/hickory-dns bin/encrypted-dns > report.txt 2>&1
+          # --deny warnings: unmaintained, unsound and yanked notices also count
+          # as findings, so they reach the issue.
+          cargo audit bin --deny warnings bin/hickory-dns bin/encrypted-dns > report.txt 2>&1
           echo "status=$?" >> "$GITHUB_OUTPUT"
           cat report.txt
 

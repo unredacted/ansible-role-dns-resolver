@@ -24,7 +24,14 @@ PY
   --build-arg "CARGO_CYCLONEDX_VERSION=$(tool cargo_cyclonedx)" \
   -t dns-resolver-builder -f build/Dockerfile build
 
-"$docker" run --rm --platform "$platform" \
+# Run as the calling user so artifacts/ and target/ stay owned by them.
+# Cargo's own home in the image belongs to root, so use a scratch one.
+user_args=(--user "$(id -u):$(id -g)" -e HOME=/tmp -e CARGO_HOME=/tmp/cargo-home)
+case "$docker" in
+  *podman*) user_args+=(--userns=keep-id) ;;
+esac
+
+"$docker" run --rm --platform "$platform" "${user_args[@]}" \
   -e "SOURCE_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
   -v "$PWD:/src" \
   dns-resolver-builder bash build/build.sh
