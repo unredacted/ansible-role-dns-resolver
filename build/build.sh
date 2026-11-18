@@ -39,11 +39,15 @@ grep -q "^hickory-dns = { version = \"=${hickory_version}\"" Cargo.toml \
   || { echo "Cargo.toml does not pin hickory-dns =${hickory_version}" >&2; exit 1; }
 cargo deny --locked check advisories bans licenses  # reads deny.toml, a link to ../deny.toml
 cargo audit --deny warnings --file Cargo.lock
-if cargo tree --locked --target "$target" -e normal,build -i ring >/dev/null 2>&1; then
+# cargo tree prints nothing (and still exits 0) when a crate is absent.
+if [ -n "$(cargo tree -q --locked --target "$target" -e normal,build -i ring 2>/dev/null)" ]; then
   echo "ring is in the hickory-dns build graph; aws-lc-rs must be the only TLS crypto provider" >&2
   exit 1
 fi
-cargo tree --locked --target "$target" -e normal,build -i aws-lc-rs >/dev/null
+if [ -z "$(cargo tree -q --locked --target "$target" -e normal,build -i aws-lc-rs 2>/dev/null)" ]; then
+  echo "aws-lc-rs is missing from the hickory-dns build graph" >&2
+  exit 1
+fi
 cargo auditable build --locked --release --target "$target"
 install -m 0755 "target/$target/release/hickory-dns" "$out/hickory-dns"
 cargo cyclonedx --format json --target "$target" --override-filename hickory-dns.cdx
