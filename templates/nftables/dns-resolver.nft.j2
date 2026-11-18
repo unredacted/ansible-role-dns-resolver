@@ -1,0 +1,123 @@
+# {{ ansible_managed }}
+#
+# The DNS resolver's own table. Loading this file replaces the whole table in
+# one transaction and leaves every other table (for example a VPN's) alone.
+# Mode: {{ dns_resolver_fw_mode }}
+{% set v4 = dns_resolver_listen_v4 %}
+{% set v6 = dns_resolver_listen_v6 %}
+{% set service_ports = ([dns_resolver_doh_port, dns_resolver_dot_port, dns_resolver_doq_port]
+                        + ([dns_resolver_dnscrypt_port] if dns_resolver_dnscrypt_enabled else [])) | unique | sort %}
+{% set metrics_ports = [dns_resolver_hickory_metrics_port] + ([dns_resolver_dnscrypt_metrics_port] if dns_resolver_dnscrypt_enabled else []) %}
+{% set mgmt_if = ('iifname "' ~ dns_resolver_mgmt_interface ~ '" ') if dns_resolver_mgmt_interface | length > 0 else '' %}
+{% set deny4 = ['0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12',
+                '192.0.0.0/24', '192.0.2.0/24', '192.168.0.0/16', '198.18.0.0/15', '198.51.100.0/24',
+                '203.0.113.0/24', '224.0.0.0/4', '240.0.0.0/4'] + v4 %}
+{% set deny6 = ['::/127', '::ffff:0:0/96', '64:ff9b:1::/48', '100::/64', '2001:db8::/32', 'fc00::/7',
+                'fe80::/10', 'ff00::/8'] + v6 %}
+table inet dns_resolver {}
+delete table inet dns_resolver
+table inet dns_resolver {
+{% if v4 %}
+  set listen4 { type ipv4_addr; elements = { {{ v4 | join(', ') }} } }
+{% endif %}
+{% if v6 %}
+  set listen6 { type ipv6_addr; elements = { {{ v6 | join(', ') }} } }
+{% endif %}
+  set service_ports { type inet_service; elements = { {{ service_ports | join(', ') }} } }
+{% if dns_resolver_metrics_allowed_sources_v4 %}
+  set metrics4 { type ipv4_addr; flags interval; auto-merge; elements = { {{ dns_resolver_metrics_allowed_sources_v4 | join(', ') }} } }
+{% endif %}
+{% if dns_resolver_metrics_allowed_sources_v6 %}
+  set metrics6 { type ipv6_addr; flags interval; auto-merge; elements = { {{ dns_resolver_metrics_allowed_sources_v6 | join(', ') }} } }
+{% endif %}
+{% if dns_resolver_fw_mode == 'pilot' %}
+{% if dns_resolver_pilot_sources_v4 %}
+  set pilot4 { type ipv4_addr; flags interval; auto-merge; elements = { {{ dns_resolver_pilot_sources_v4 | join(', ') }} } }
+{% endif %}
+{% if dns_resolver_pilot_sources_v6 %}
+  set pilot6 { type ipv6_addr; flags interval; auto-merge; elements = { {{ dns_resolver_pilot_sources_v6 | join(', ') }} } }
+{% endif %}
+{% endif %}
+  # Per-source state. Entries live in memory and expire; they are never saved.
+  set meter4 { type ipv4_addr; size 131072; flags dynamic,timeout; timeout {{ dns_resolver_meter_timeout }}s; }
+  set meter6 { type ipv6_addr; size 131072; flags dynamic,timeout; timeout {{ dns_resolver_meter_timeout }}s; }
+  set newconn4 { type ipv4_addr; size 131072; flags dynamic,timeout; timeout {{ dns_resolver_meter_timeout }}s; }
+  set newconn6 { type ipv6_addr; size 131072; flags dynamic,timeout; timeout {{ dns_resolver_meter_timeout }}s; }
+  set conn4 { type ipv4_addr; size 131072; flags dynamic; }
+  set conn6 { type ipv6_addr; size 131072; flags dynamic; }
+  set deny4 { type ipv4_addr; flags interval; auto-merge; elements = { {{ deny4 | join(', ') }} } }
+  set deny6 { type ipv6_addr; flags interval; auto-merge; elements = { {{ deny6 | join(', ') }} } }
+
+  chain input {
+    type filter hook input priority filter; policy drop;
+    iif lo accept
+    # The plain DNS port is for local programs only.
+    meta l4proto { tcp, udp } th dport {{ dns_resolver_plain_loopback_port }} counter drop
+    {{ mgmt_if }}tcp dport { {{ dns_resolver_mgmt_tcp_ports | join(', ') }} } accept
+{% if dns_resolver_metrics_allowed_sources_v4 %}
+    {{ mgmt_if }}ip saddr @metrics4 tcp dport { {{ metrics_ports | join(', ') }} } accept
+{% endif %}
+{% if dns_resolver_metrics_allowed_sources_v6 %}
+    {{ mgmt_if }}ip6 saddr @metrics6 tcp dport { {{ metrics_ports | join(', ') }} } accept
+{% endif %}
+{% if dns_resolver_mgmt_udp_ports %}
+    udp dport { {{ dns_resolver_mgmt_udp_ports | join(', ') }} } accept
+{% endif %}
+    meta l4proto icmp accept
+    meta l4proto ipv6-icmp accept
+{% if dns_resolver_fw_mode != 'baseline' %}
+{% if v4 %}
+    ip daddr @listen4 meta l4proto { tcp, udp } th dport @service_ports jump service
+{% endif %}
+{% if v6 %}
+    ip6 daddr @listen6 meta l4proto { tcp, udp } th dport @service_ports jump service
+{% endif %}
+{% endif %}
+    ct state established,related accept
+    ct state invalid drop
+  }
+{% if dns_resolver_fw_mode != 'baseline' %}
+
+  # Traffic to the resolver's public ports.
+  chain service {
+{% if dns_resolver_fw_mode == 'pilot' %}
+{% if dns_resolver_pilot_sources_v4 %}
+    meta nfproto ipv4 ip saddr != @pilot4 counter drop
+{% else %}
+    meta nfproto ipv4 counter drop
+{% endif %}
+{% if dns_resolver_pilot_sources_v6 %}
+    meta nfproto ipv6 ip6 saddr != @pilot6 counter drop
+{% else %}
+    meta nfproto ipv6 counter drop
+{% endif %}
+{% endif %}
+    meta nfproto ipv4 update @meter4 { ip saddr limit rate over {{ dns_resolver_meter_pps }}/second burst {{ dns_resolver_meter_burst }} packets } counter drop
+    meta nfproto ipv6 update @meter6 { ip6 saddr and ffff:ffff:ffff:ffff:: limit rate over {{ dns_resolver_meter_pps }}/second burst {{ dns_resolver_meter_burst }} packets } counter drop
+    ct state established,related accept
+    ct state new meta nfproto ipv4 add @conn4 { ip saddr ct count over {{ dns_resolver_conn_cap_per_source }} } counter drop
+    ct state new meta nfproto ipv6 add @conn6 { ip6 saddr and ffff:ffff:ffff:ffff:: ct count over {{ dns_resolver_conn_cap_per_source }} } counter drop
+    ct state new meta nfproto ipv4 update @newconn4 { ip saddr limit rate over {{ dns_resolver_newconn_rate }}/second burst {{ dns_resolver_newconn_burst }} packets } counter drop
+    ct state new meta nfproto ipv6 update @newconn6 { ip6 saddr and ffff:ffff:ffff:ffff:: limit rate over {{ dns_resolver_newconn_rate }}/second burst {{ dns_resolver_newconn_burst }} packets } counter drop
+    ct state new accept
+    counter drop
+  }
+{% endif %}
+
+  # Which new outbound connections the DNS programs may open.
+  chain output {
+    type filter hook output priority filter; policy accept;
+    ct state established,related accept
+    # Hickory may only query DNS servers on public addresses.
+    meta skuid "{{ dns_resolver_hickory_user }}" ip daddr @deny4 counter drop
+    meta skuid "{{ dns_resolver_hickory_user }}" ip6 daddr @deny6 counter drop
+{% if dns_resolver_mgmt_interface | length > 0 %}
+    meta skuid "{{ dns_resolver_hickory_user }}" oifname "{{ dns_resolver_mgmt_interface }}" counter drop
+{% endif %}
+    meta skuid "{{ dns_resolver_hickory_user }}" meta l4proto { tcp, udp } th dport 53 accept
+    meta skuid "{{ dns_resolver_hickory_user }}" counter drop
+    # encrypted-dns may only talk to Hickory's plain port on loopback.
+    meta skuid "{{ dns_resolver_dnscrypt_user }}" ip daddr 127.0.0.1 meta l4proto { tcp, udp } th dport {{ dns_resolver_plain_loopback_port }} accept
+    meta skuid "{{ dns_resolver_dnscrypt_user }}" counter drop
+  }
+}

@@ -1,0 +1,110 @@
+---
+# Load a firewall policy so that a mistake cannot lock us out.
+#
+# 1. Render the candidate to staging and check its syntax. The file loaded at
+#    boot is not touched yet.
+# 2. Save the current committed file as the rollback file (on a new host, the
+#    rollback file just deletes the table).
+# 3. Arm a timer that loads the rollback file after a delay.
+# 4. Load the candidate. Each file replaces the whole table in one transaction.
+# 5. Run the checks: a fresh management connection, and DNS once it runs.
+# 6. Commit the candidate as the boot file and disarm the timer.
+# If a check fails, the rollback file is loaded at once and the role stops.
+#
+# Rollback files are always rendered policy files, never a dump of the live
+# table, so they never contain per-source rate-limit entries.
+
+- name: Render the candidate firewall policy ({{ dns_resolver_fw_mode }})
+  ansible.builtin.template:
+    src: nftables/dns-resolver.nft.j2
+    dest: /etc/nftables.d/staging/dns-resolver.nft
+    owner: root
+    group: root
+    mode: "0600"
+    validate: nft -c -f %s
+
+- name: Compare the candidate with the committed policy
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  loop:
+    - /etc/nftables.d/staging/dns-resolver.nft
+    - /etc/nftables.d/dns-resolver.nft
+  register: dns_resolver_fw_files
+
+- name: Apply the candidate policy with a rollback timer
+  when: >-
+    not dns_resolver_fw_files.results[1].stat.exists
+    or dns_resolver_fw_files.results[0].stat.checksum != dns_resolver_fw_files.results[1].stat.checksum
+  block:
+    - name: Save the committed policy as the rollback file
+      ansible.builtin.copy:
+        src: /etc/nftables.d/dns-resolver.nft
+        dest: /etc/nftables.d/dns-resolver.nft.prev
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0600"
+      when: dns_resolver_fw_files.results[1].stat.exists
+
+    - name: Write a rollback file that removes the table (new host)
+      ansible.builtin.copy:
+        dest: /etc/nftables.d/dns-resolver.nft.prev
+        content: |
+          table inet dns_resolver {}
+          delete table inet dns_resolver
+        owner: root
+        group: root
+        mode: "0600"
+      when: not dns_resolver_fw_files.results[1].stat.exists
+
+    - name: Clear an old rollback timer
+      ansible.builtin.systemd_service:
+        name: dns-resolver-fw-rollback.timer
+        state: stopped
+      failed_when: false
+
+    - name: Arm the rollback timer
+      ansible.builtin.command: >-
+        systemd-run --unit=dns-resolver-fw-rollback --collect
+        --on-active={{ dns_resolver_firewall_rollback_seconds }}
+        /usr/sbin/nft -f /etc/nftables.d/dns-resolver.nft.prev
+      changed_when: true
+
+    - name: Load the candidate policy
+      ansible.builtin.command: nft -f /etc/nftables.d/staging/dns-resolver.nft
+      changed_when: true
+
+    - name: Run the checks after loading the policy
+      ansible.builtin.include_tasks: firewall_checks.yml
+
+    - name: Commit the candidate as the boot policy
+      ansible.builtin.copy:
+        src: /etc/nftables.d/staging/dns-resolver.nft
+        dest: /etc/nftables.d/dns-resolver.nft
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Disarm the rollback timer
+      ansible.builtin.systemd_service:
+        name: dns-resolver-fw-rollback.timer
+        state: stopped
+
+  rescue:
+    - name: Roll back to the previous policy now
+      ansible.builtin.command: nft -f /etc/nftables.d/dns-resolver.nft.prev
+      changed_when: true
+
+    - name: Disarm the rollback timer after rolling back
+      ansible.builtin.systemd_service:
+        name: dns-resolver-fw-rollback.timer
+        state: stopped
+      failed_when: false
+
+    - name: Stop here
+      ansible.builtin.fail:
+        msg: >-
+          The checks failed after loading the {{ dns_resolver_fw_mode }} firewall
+          policy, so the previous policy was restored. The boot policy is unchanged.

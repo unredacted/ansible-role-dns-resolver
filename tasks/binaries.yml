@@ -1,0 +1,49 @@
+---
+- name: Describe the binaries
+  ansible.builtin.set_fact:
+    dns_resolver_binaries:
+      - name: hickory-dns
+        src: "{{ dns_resolver_hickory_src }}"
+        url: "{{ dns_resolver_hickory_url }}"
+        sha256: "{{ dns_resolver_hickory_sha256 }}"
+      - name: encrypted-dns
+        src: "{{ dns_resolver_encrypted_dns_src }}"
+        url: "{{ dns_resolver_encrypted_dns_url }}"
+        sha256: "{{ dns_resolver_encrypted_dns_sha256 }}"
+
+- name: Check that each binary has a source
+  ansible.builtin.assert:
+    that:
+      - item.src | length > 0 or (item.url | length > 0 and item.sha256 | length == 64)
+    fail_msg: >-
+      {{ item.name }}: set its URL and SHA-256 (dns_resolver_*_url and
+      dns_resolver_*_sha256), or a local file in dns_resolver_*_src.
+    quiet: true
+  loop: "{{ dns_resolver_binaries }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Download the binaries from the release
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "/usr/local/sbin/{{ item.name }}"
+    checksum: "sha256:{{ item.sha256 }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ dns_resolver_binaries | selectattr('src', 'equalto', '') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Restart the DNS services
+
+- name: Copy the binaries from the controller
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "/usr/local/sbin/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ dns_resolver_binaries | rejectattr('src', 'equalto', '') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Restart the DNS services

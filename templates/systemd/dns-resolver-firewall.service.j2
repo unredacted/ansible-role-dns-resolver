@@ -1,0 +1,18 @@
+# {{ ansible_managed }}
+[Unit]
+Description=nftables table for the DNS resolver
+Documentation=https://github.com/unredacted/ansible-role-dns-resolver
+DefaultDependencies=no
+Wants=network-pre.target
+Before=network-pre.target shutdown.target
+Conflicts=shutdown.target
+ConditionPathExists=/etc/nftables.d/dns-resolver.nft
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/nftables.d/dns-resolver.nft
+ExecReload=/usr/sbin/nft -f /etc/nftables.d/dns-resolver.nft
+
+[Install]
+WantedBy=sysinit.target

@@ -25,3 +25,79 @@ dns_resolver_listen_v6: []
 dns_resolver_access: pilot
 dns_resolver_pilot_sources_v4: []
 dns_resolver_pilot_sources_v6: []
+
+# --- Management access ----------------------------------------------------------
+
+# Interface that carries SSH (and metrics scrapes). Leave empty to allow the
+# management ports on every interface.
+dns_resolver_mgmt_interface: ""
+dns_resolver_mgmt_tcp_ports:
+  - 22
+# Extra UDP ports to accept from anywhere, for example a VPN's listen port.
+dns_resolver_mgmt_udp_ports: []
+
+# --- Ports --------------------------------------------------------------------
+
+dns_resolver_doh_port: 443
+dns_resolver_dot_port: 853
+dns_resolver_doq_port: 853
+dns_resolver_dnscrypt_enabled: true
+dns_resolver_dnscrypt_port: 8443
+# Hickory's plain DNS listener for encrypted-dns. Only loopback may reach it.
+dns_resolver_plain_loopback_port: 5300
+
+# --- Metrics ------------------------------------------------------------------
+
+# Address the metrics endpoints bind to, and who may scrape them. The
+# endpoints have no authentication, so the firewall limits access.
+dns_resolver_metrics_listen: 127.0.0.1
+dns_resolver_hickory_metrics_port: 9153
+dns_resolver_dnscrypt_metrics_port: 9154
+dns_resolver_metrics_allowed_sources_v4: []
+dns_resolver_metrics_allowed_sources_v6: []
+# node_exporter textfile collector directory (Debian's default).
+dns_resolver_textfile_dir: /var/lib/prometheus/node-exporter
+
+# --- Rate limits (nftables) ---------------------------------------------------
+
+# Per-source limits. IPv4 sources are counted per address, IPv6 per /64.
+# Entries expire after dns_resolver_meter_timeout seconds without traffic.
+dns_resolver_meter_timeout: 60
+dns_resolver_meter_pps: 300
+dns_resolver_meter_burst: 600
+dns_resolver_conn_cap_per_source: 32
+dns_resolver_newconn_rate: 20
+dns_resolver_newconn_burst: 40
+
+# Seconds before a new firewall policy is rolled back if the checks after
+# loading it do not pass.
+dns_resolver_firewall_rollback_seconds: 180
+
+# --- Binaries -----------------------------------------------------------------
+
+# Release of this repository that provides the binaries. A CI workflow updates
+# these five values together after each release.
+dns_resolver_binary_release: ""
+dns_resolver_hickory_url: ""
+dns_resolver_hickory_sha256: ""
+dns_resolver_encrypted_dns_url: ""
+dns_resolver_encrypted_dns_sha256: ""
+# Paths on the controller. When set, these files are copied instead of
+# downloading from the release.
+dns_resolver_hickory_src: ""
+dns_resolver_encrypted_dns_src: ""
+
+# --- Users --------------------------------------------------------------------
+
+dns_resolver_hickory_user: hickory
+dns_resolver_dnscrypt_user: encrypted-dns
+
+# --- Logs, core dumps, swap ---------------------------------------------------
+
+# Both programs log to their own journal namespace, kept in memory only.
+dns_resolver_journal_namespace: dnsresolver
+dns_resolver_journal_max_use: 32M
+dns_resolver_journal_max_retention: 1h
+# The role refuses to run on a host with swap on disk, because memory pages
+# holding DNS data could be written there. Set to true to allow it.
+dns_resolver_allow_disk_swap: false

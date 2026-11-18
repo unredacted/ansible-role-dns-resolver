@@ -1,0 +1,86 @@
+---
+- name: Verify the firewall rollback
+  hosts: all
+  gather_facts: true
+  vars:
+    dns_resolver_role: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') | basename }}"
+  tasks:
+    - name: Record the committed policy and the live table before the test
+      ansible.builtin.include_tasks: tasks/snapshot.yml
+      vars:
+        snapshot_name: before
+
+    - name: Check that the rollback file is a rendered baseline, not a dump of the live table
+      ansible.builtin.command: "grep -c -E 'Mode: baseline' /etc/nftables.d/dns-resolver.nft.prev"
+      changed_when: false
+
+    - name: Check that no file on disk holds per-source entries
+      ansible.builtin.command: >-
+        grep -E -l 'set (meter|newconn|conn)[46] \{[^}]*elements' /etc/nftables.d/dns-resolver.nft
+        /etc/nftables.d/dns-resolver.nft.prev
+      register: dns_resolver_verify_elements
+      changed_when: false
+      failed_when: dns_resolver_verify_elements.rc != 1
+
+    - name: Apply a public policy whose checks fail on purpose
+      block:
+        - name: Run the role with failing firewall checks
+          ansible.builtin.include_role:
+            name: "{{ dns_resolver_role }}"
+          vars:
+            dns_resolver_access: public
+            dns_resolver_test_fail_firewall_check: true
+
+        - name: The role should have stopped
+          ansible.builtin.fail:
+            msg: The role finished although the firewall checks failed.
+      rescue:
+        - name: Note the expected failure
+          ansible.builtin.set_fact:
+            dns_resolver_rollback_seen: true
+
+    - name: Check that the role stopped
+      ansible.builtin.assert:
+        that:
+          - dns_resolver_rollback_seen | default(false)
+        quiet: true
+
+    - name: Record the state after the rollback
+      ansible.builtin.include_tasks: tasks/snapshot.yml
+      vars:
+        snapshot_name: after
+
+    - name: Check that the pilot policy is still live and committed
+      ansible.builtin.assert:
+        that:
+          - snapshots.after.committed == snapshots.before.committed
+          - snapshots.after.rules == snapshots.before.rules
+          - "'pilot4' in snapshots.after.rules"
+        quiet: true
+
+    - name: Read the rollback timer
+      ansible.builtin.systemd_service:
+        name: dns-resolver-fw-rollback.timer
+      register: dns_resolver_verify_timer
+
+    - name: Check that the rollback timer is not armed
+      ansible.builtin.assert:
+        that:
+          - dns_resolver_verify_timer.status.ActiveState | default('inactive') != 'active'
+        quiet: true
+
+    - name: Reload the committed policy as at boot
+      ansible.builtin.systemd_service:
+        name: dns-resolver-firewall.service
+        state: restarted
+
+    - name: Record the state after the reload
+      ansible.builtin.include_tasks: tasks/snapshot.yml
+      vars:
+        snapshot_name: reloaded
+
+    - name: Check that the boot policy is the pilot policy
+      ansible.builtin.assert:
+        that:
+          - snapshots.reloaded.rules == snapshots.before.rules
+        quiet: true
