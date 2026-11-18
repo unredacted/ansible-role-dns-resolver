@@ -179,17 +179,22 @@
         'Verify return code: 0 (ok)' not in pq_quic.stdout
         or (pq_quic.stdout | regex_search('length ([0-9a-f]+)[^,]*, ServerHello', '\\1') | first | int(base=16)) < 1120
 
+    # For a classic exchange openssl prints "Peer Temp Key" instead of a
+    # "Negotiated TLS1.3 group" line.
     - name: A classic client still connects with X25519
       ansible.builtin.shell: >-
         set -o pipefail;
         {{ in_client }} openssl s_client -alpn dot -connect {{ resolver_v4 }}:853
         -servername {{ hostnames[0] }} -CAfile {{ ca }} -groups X25519 </dev/null 2>&1
-        | grep 'Negotiated TLS1.3 group'
+        | grep -E 'Negotiated TLS1.3 group|Peer Temp Key|Verify return code'
       args:
         executable: /bin/bash
       register: classic
       changed_when: false
-      failed_when: "'Negotiated TLS1.3 group: X25519' not in classic.stdout"
+      failed_when: >-
+        'X25519' not in classic.stdout
+        or 'MLKEM' in classic.stdout
+        or 'Verify return code: 0 (ok)' not in classic.stdout
 
     # --- DNSSEC ---------------------------------------------------------------
 
