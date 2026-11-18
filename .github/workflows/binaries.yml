@@ -6,6 +6,13 @@ name: Binaries
 # (test binaries). Needs only read access.
 'on':
   workflow_call:
+    inputs:
+      use_cache:
+        description: >-
+          Reuse binaries built earlier from the same build/ inputs. For test
+          runs only; releases always build from scratch.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -33,7 +40,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Look for binaries built from the same inputs
+        id: cache
+        if: inputs.use_cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: artifacts/
+          key: test-binaries-${{ hashFiles('build/**') }}
+
       - name: Build in the pinned builder image
+        if: steps.cache.outputs.cache-hit != 'true'
         run: build/run.sh
 
       - name: Upload the binaries
