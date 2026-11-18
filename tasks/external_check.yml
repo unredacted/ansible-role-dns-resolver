@@ -1,0 +1,26 @@
+---
+# Check a site from the controller, the way a client would: for every public
+# address and host name, a DoT query for a signed name must be answered
+# NOERROR with the AD bit, over a certificate trusted by the system CAs.
+#
+# Use it from a playbook after the role:
+#
+#   - ansible.builtin.include_role:
+#       name: ansible-role-dns-resolver
+#       tasks_from: external_check
+
+- name: Query each address and host name from the controller
+  ansible.builtin.script: >-
+    dns-resolver-query.py {{ item.0 }} {{ dns_resolver_dot_port }} {{ dns_resolver_post_check_signed_name }}
+    --sni {{ item.1 }} --system-ca --dnssec
+  args:
+    executable: python3
+  loop: "{{ (dns_resolver_listen_v4 + dns_resolver_listen_v6) | product(dns_resolver_hostnames) | list }}"
+  delegate_to: localhost
+  become: false
+  register: dns_resolver_external
+  changed_when: false
+  failed_when: >-
+    dns_resolver_external.rc != 0
+    or (dns_resolver_external.stdout | from_json).rcode != 'NOERROR'
+    or not (dns_resolver_external.stdout | from_json).ad
