@@ -1,0 +1,24 @@
+---
+galaxy_info:
+  role_name: dns_resolver
+  namespace: unredacted
+  author: lunarthegrey
+  description: Run a public, encrypted-only DNS resolver with Hickory DNS and encrypted-dns-server
+  company: Unredacted Inc
+  license: GPL-3.0-only
+  min_ansible_version: "2.17"
+  platforms:
+    - name: Debian
+      versions:
+        - trixie
+  galaxy_tags:
+    - dns
+    - resolver
+    - doh
+    - dot
+    - doq
+    - dnscrypt
+    - privacy
+    - hickory
+
+dependencies: []
