@@ -83,6 +83,8 @@ jobs:
     needs: plan
     if: needs.plan.outputs.build == 'true'
     uses: ./.github/workflows/binaries.yml
+    with:
+      use_cache: true
 
   molecule:
     name: Molecule (${{ matrix.scenario }})
