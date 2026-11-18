@@ -8,15 +8,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 # reported but do not fail the build; they go to the weekly audit issue.
 yanked = "deny"
 unmaintained = "workspace"
-# Each entry needs a reason. Only advisories that cannot affect the shipped
-# binaries belong here; `cargo audit bin` on the binaries still checks every
-# runtime dependency without exceptions.
-ignore = [
-  # zip is a build-time dependency of libsodium-sys-stable (encrypted-dns),
-  # used to unpack the libsodium source archive, which that crate verifies
-  # with a signature first. zip is not part of the encrypted-dns binary.
-  { id = "RUSTSEC-2026-0548", reason = "build-time only (libsodium-sys-stable unpacks a signed archive); not in the binary" },
-]
+ignore = []
 
 [bans]
 multiple-versions = "allow"

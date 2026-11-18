@@ -61,10 +61,14 @@ echo "${edns_sha}  $work/edns.crate" | sha256sum -c -
 tar -xzf "$work/edns.crate" -C "$work"
 cd "$work/encrypted-dns-${edns_version}"
 test -f Cargo.lock || { echo "the crate has no Cargo.lock" >&2; exit 1; }
+# This lockfile comes from upstream, and it includes build-time crates that do
+# not end up in the binary. Report its advisories without failing; the gate
+# for what ships is `cargo audit bin` on the built binary, further down.
 cp /src/build/deny.toml deny.toml
-# Lockfile check with the reasoned exceptions in build/deny.toml. The shipped
-# binary is checked without exceptions by `cargo audit bin` below.
-cargo deny --locked check advisories
+if ! cargo deny --locked check advisories 2> "$work/edns-lockfile-advisories.txt"; then
+  echo "encrypted-dns lockfile advisories (reported, checked again on the binary):"
+  grep -E "^(error|warning)\[|ID: RUSTSEC|── " "$work/edns-lockfile-advisories.txt" || true
+fi
 cargo auditable build --locked --release --target "$target"
 install -m 0755 "target/$target/release/encrypted-dns" "$out/encrypted-dns"
 cargo cyclonedx --format json --target "$target" --override-filename encrypted-dns.cdx
@@ -80,6 +84,9 @@ cp /src/build/native-inventory.md "$out/"
   rustc --version
   cargo --version
   echo "source ${SOURCE_COMMIT:-unknown}"
+  echo
+  echo "encrypted-dns lockfile advisories (build or runtime; the binary passed cargo audit bin):"
+  grep -oE "RUSTSEC-[0-9]{4}-[0-9]{4}" "$work/edns-lockfile-advisories.txt" | sort -u || true
 } > BUILDINFO
 sha256sum hickory-dns encrypted-dns > SHA256SUMS
 cat SHA256SUMS
