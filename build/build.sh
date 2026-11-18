@@ -37,8 +37,10 @@ echo "== hickory-dns ${hickory_version}"
 cd /src/build/hickory-dns
 grep -q "^hickory-dns = { version = \"=${hickory_version}\"" Cargo.toml \
   || { echo "Cargo.toml does not pin hickory-dns =${hickory_version}" >&2; exit 1; }
-cargo deny --locked check advisories bans licenses  # reads deny.toml, a link to ../deny.toml
-cargo audit --deny warnings --file Cargo.lock
+cargo deny --locked check advisories bans licenses sources  # reads deny.toml, a link to ../deny.toml
+# Vulnerabilities and yanked crates fail the build. Unmaintained and unsound
+# notices are printed here and picked up by the weekly audit (audit.yml).
+cargo audit --deny yanked --target-arch x86_64 --target-os linux --file Cargo.lock
 # cargo tree prints nothing (and still exits 0) when a crate is absent.
 if [ -n "$(cargo tree -q --locked --target "$target" -e normal,build -i ring 2>/dev/null)" ]; then
   echo "ring is in the hickory-dns build graph; aws-lc-rs must be the only TLS crypto provider" >&2

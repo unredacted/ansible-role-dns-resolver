@@ -76,7 +76,10 @@
   register: dns_resolver_fw_committed
 
 - name: Apply the management-only baseline on a new host
-  ansible.builtin.include_tasks: firewall_apply.yml
+  ansible.builtin.include_tasks:
+    file: firewall_apply.yml
+    apply:
+      tags: [dns_resolver, dns_resolver_firewall]
   vars:
     dns_resolver_fw_mode: baseline
   when: not dns_resolver_fw_committed.stat.exists

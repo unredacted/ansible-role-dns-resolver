@@ -22,12 +22,19 @@
       register: dns_resolver_verify_versions
       changed_when: false
 
+    # The expected versions come from the build inputs, so a version bump
+    # only needs to change build/versions.yml.
     - name: Check the binary versions
       ansible.builtin.assert:
         that:
-          - "'0.26.3' in dns_resolver_verify_versions.results[0].stdout"
-          - "'0.9.22' in dns_resolver_verify_versions.results[1].stdout"
+          - dns_resolver_build.hickory.version in dns_resolver_verify_versions.results[0].stdout
+          - dns_resolver_build.encrypted_dns.version in dns_resolver_verify_versions.results[1].stdout
         quiet: true
+      vars:
+        dns_resolver_build: >-
+          {{ lookup('ansible.builtin.file',
+                    lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') ~ '/build/versions.yml')
+             | from_yaml }}
 
     - name: Read the policy files
       ansible.builtin.slurp:
