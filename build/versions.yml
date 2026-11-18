@@ -1,0 +1,21 @@
+---
+# Inputs for the binary build. Changing this file starts a new build and,
+# after merge, a new release.
+target: x86_64-unknown-linux-gnu
+
+hickory:
+  # Must match the hickory-dns version in build/hickory-dns/Cargo.toml.
+  version: 0.26.3
+  upstream_tag: v0.26.3
+  upstream_commit: bd37cafbdd86112a6da32878f8c9bab22e14377e
+
+encrypted_dns:
+  version: 0.9.22
+  # sha256 of the .crate file, from the crates.io index (cksum field).
+  crate_sha256: b636e49b94a08add754b2349b7c9826f659127b4af0117e207641338ce832516
+
+tools:
+  cargo_auditable: 0.7.7
+  cargo_deny: 0.21.0
+  cargo_audit: 0.23.0
+  cargo_cyclonedx: 0.5.10

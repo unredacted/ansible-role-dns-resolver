@@ -24,3 +24,19 @@ updates:
     groups:
       ci-tools:
         patterns: ['*']
+
+  - package-ecosystem: docker
+    directory: /build
+    schedule:
+      interval: weekly
+    groups:
+      builder-image:
+        patterns: ['*']
+
+  - package-ecosystem: cargo
+    directory: /build/hickory-dns
+    schedule:
+      interval: weekly
+    groups:
+      hickory-dns:
+        patterns: ['*']

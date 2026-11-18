@@ -92,6 +92,45 @@ for each one.
 | `dns_resolver_pilot_sources_v4` | `[]` | IPv4 sources allowed in pilot mode. |
 | `dns_resolver_pilot_sources_v6` | `[]` | IPv6 sources allowed in pilot mode. |
 
+## Binaries
+
+The role installs prebuilt binaries from this repository's GitHub releases.
+Each release has a tag like `binaries-20261117-abc1234`, and its assets are
+never replaced. `defaults/main.yml` pins one release, with a SHA-256 sum for
+each binary.
+
+How a release is made:
+
+- `build/run.sh` builds both programs in a digest-pinned Debian 13 Rust
+  image, for `x86_64-unknown-linux-gnu`.
+- hickory-dns is built from `build/hickory-dns/`, a small wrapper crate with
+  its own `Cargo.lock`. Its `src/main.rs` is an unmodified copy of upstream's
+  entrypoint, and CI checks that it still matches. The wrapper exists so that
+  Dependabot can propose dependency updates.
+- encrypted-dns is built from the crates.io package, using the lockfile that
+  ships with it. The version and the package checksum are in
+  `build/versions.yml`.
+- The build runs `cargo deny` and `cargo audit`, and fails if `ring` is in
+  the hickory-dns dependency tree. aws-lc-rs is its only TLS crypto provider,
+  because ring has no post-quantum key exchange.
+- Each release includes SBOMs, `SHA256SUMS`, a list of the native (C) code in
+  the binaries, and a GitHub build provenance attestation. Check a download
+  with `gh attestation verify hickory-dns --repo unredacted/ansible-role-dns-resolver`.
+- After a release, CI opens a pull request that points `defaults/main.yml` at
+  it.
+
+Updates:
+
+- Dependabot proposes new versions of the builder image and of the Rust crates
+  behind hickory-dns.
+- A weekly workflow opens a pull request when encrypted-dns has a new release.
+- A weekly workflow audits the newest release and opens an issue if it finds
+  an advisory.
+
+To update hickory-dns itself, change the version in
+`build/hickory-dns/Cargo.toml` and `build/versions.yml`, and copy upstream's
+`bin/src/hickory-dns.rs` for that version into `build/hickory-dns/src/main.rs`.
+
 ## Testing
 
 ```bash
