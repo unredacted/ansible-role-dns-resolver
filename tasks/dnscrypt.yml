@@ -1,0 +1,145 @@
+---
+- name: Check the DNSCrypt settings
+  ansible.builtin.assert:
+    that:
+      - dns_resolver_dnscrypt_provider_name is match('^2\.dnscrypt-cert\.')
+      - not dns_resolver_dnscrypt_published or dns_resolver_dnscrypt_provider_pubkey is match('^[0-9a-fA-F]{64}$')
+    fail_msg: >-
+      The provider name must start with "2.dnscrypt-cert.", and published mode
+      needs dns_resolver_dnscrypt_provider_pubkey (64 hex characters).
+    quiet: true
+
+- name: Create the helper directory
+  ansible.builtin.file:
+    path: /usr/local/libexec/dns-resolver
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create the node_exporter textfile directory
+  ansible.builtin.file:
+    path: "{{ dns_resolver_textfile_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the DNSCrypt state check
+  ansible.builtin.copy:
+    src: dnscrypt-state-check.py
+    dest: /usr/local/libexec/dns-resolver/dnscrypt-state-check.py
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create the DNSCrypt directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.owner }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/encrypted-dns, owner: root, mode: "0755" }
+    - { path: /var/lib/encrypted-dns, owner: "{{ dns_resolver_dnscrypt_user }}", mode: "0700" }
+
+- name: Look for the DNSCrypt state
+  ansible.builtin.stat:
+    path: /var/lib/encrypted-dns/encrypted-dns.state
+  register: dns_resolver_dnscrypt_state
+
+# Published mode never lets encrypted-dns make a new identity. A missing state
+# comes back from the backup, or the role stops.
+- name: Restore the DNSCrypt state from the backup
+  ansible.builtin.copy:
+    content: "{{ dns_resolver_dnscrypt_state_backup }}"
+    dest: /var/lib/encrypted-dns/encrypted-dns.state
+    owner: "{{ dns_resolver_dnscrypt_user }}"
+    group: "{{ dns_resolver_dnscrypt_user }}"
+    mode: "0600"
+  when:
+    - dns_resolver_dnscrypt_published
+    - not dns_resolver_dnscrypt_state.stat.exists
+    - dns_resolver_dnscrypt_state_backup | length > 0
+  no_log: true
+  diff: false
+  notify: Restart encrypted-dns
+
+- name: Stop if a published identity has no state and no backup
+  ansible.builtin.assert:
+    that:
+      - not dns_resolver_dnscrypt_published or dns_resolver_dnscrypt_state.stat.exists
+        or dns_resolver_dnscrypt_state_backup | length > 0
+    fail_msg: >-
+      DNSCrypt is published but /var/lib/encrypted-dns/encrypted-dns.state is
+      missing and dns_resolver_dnscrypt_state_backup is empty. The role will
+      not create a new provider key, because that would break every published
+      stamp. Restore the state file, or set dns_resolver_dnscrypt_published to
+      false to start a new identity on purpose.
+    quiet: true
+
+- name: Check the state against the pinned key
+  ansible.builtin.command: >-
+    /usr/bin/python3 /usr/local/libexec/dns-resolver/dnscrypt-state-check.py verify
+    /var/lib/encrypted-dns/encrypted-dns.state {{ dns_resolver_dnscrypt_provider_pubkey }} -
+  when: dns_resolver_dnscrypt_published
+  changed_when: false
+
+# encrypted-dns has no check-only mode, and --dry-run creates a state file when
+# it cannot read one. Point a copy of the config at a throwaway state file so
+# the check never touches the real one.
+- name: Render and check the encrypted-dns configuration
+  ansible.builtin.template:
+    src: encrypted-dns/encrypted-dns.toml.j2
+    dest: /etc/encrypted-dns/encrypted-dns.toml
+    owner: root
+    group: root
+    mode: "0644"
+    validate: >-
+      sh -c 'd=$(mktemp -d) && sed "s|^state_file = .*|state_file = \"$d/s.state\"|" "$1" > "$d/c.toml"
+      && /usr/local/sbin/encrypted-dns --config "$d/c.toml" --dry-run >/dev/null 2>&1; rc=$?; rm -rf "$d"; exit $rc' -- %s
+  notify: Restart encrypted-dns
+
+- name: Install the encrypted-dns unit
+  ansible.builtin.template:
+    src: systemd/encrypted-dns.service.j2
+    dest: /etc/systemd/system/encrypted-dns.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart encrypted-dns
+
+- name: Reload systemd for encrypted-dns
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Enable and start encrypted-dns
+  ansible.builtin.systemd_service:
+    name: encrypted-dns.service
+    enabled: true
+    state: started
+
+- name: Apply pending encrypted-dns restarts
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for the DNSCrypt listener
+  ansible.builtin.wait_for:
+    host: "{{ (dns_resolver_listen_v4 + dns_resolver_listen_v6) | first }}"
+    port: "{{ dns_resolver_dnscrypt_port }}"
+    timeout: 60
+
+- name: Read the provider public key
+  ansible.builtin.slurp:
+    src: /var/lib/encrypted-dns/provider.pub
+  register: dns_resolver_dnscrypt_pub
+  when: not dns_resolver_dnscrypt_published
+
+- name: Show the new DNSCrypt identity
+  ansible.builtin.debug:
+    msg:
+      - "encrypted-dns created provider key {{ dns_resolver_dnscrypt_pub.content | b64decode | trim }}."
+      - "Back up /var/lib/encrypted-dns/encrypted-dns.state into dns_resolver_dnscrypt_state_backup (in a vault),"
+      - "set dns_resolver_dnscrypt_provider_pubkey to the key above and dns_resolver_dnscrypt_published to true,"
+      - "and run the role again before you publish any DNSCrypt stamp."
+  when: not dns_resolver_dnscrypt_published

@@ -1,0 +1,74 @@
+---
+prerun: false
+dependency:
+  name: galaxy
+  enabled: false
+driver:
+  name: docker
+platforms:
+  - name: dns-resolver-dnscrypt
+    image: ${MOLECULE_IMAGE:-dns-resolver-molecule:trixie}
+    dockerfile: ../default/Dockerfile
+    # Set MOLECULE_PREBUILT=true to use an image built beforehand, for example
+    # an amd64 image on an arm64 machine:
+    #   docker build --platform linux/amd64 -t molecule_local/dns-resolver-molecule:trixie molecule/default
+    pre_build_image: ${MOLECULE_PREBUILT:-false}
+    # The release binaries are x86_64.
+    platform: linux/amd64
+    privileged: true
+    cgroupns_mode: host
+    command: /lib/systemd/systemd
+    tmpfs:
+      - /run
+      - /tmp
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+provisioner:
+  name: ansible
+  playbooks:
+    prepare: ../default/prepare.yml
+  env:
+    ANSIBLE_ROLES_PATH: "${MOLECULE_PROJECT_DIRECTORY}/.."
+    # The verify playbooks use the role's filters (stamps).
+    ANSIBLE_FILTER_PLUGINS: "${MOLECULE_PROJECT_DIRECTORY}/filter_plugins"
+  inventory:
+    host_vars:
+      dns-resolver-dnscrypt:
+        dns_resolver_hostnames:
+          - dns1.example.net
+          - dns2.example.net
+        dns_resolver_listen_v4:
+          - 192.0.2.53
+        dns_resolver_listen_v6:
+          - 2001:db8::53
+        dns_resolver_pilot_sources_v4:
+          - 198.51.100.0/24
+        dns_resolver_pilot_sources_v6:
+          - 2001:db8:1::/48
+        # Test containers see the host's swap, which is often on disk.
+        dns_resolver_allow_disk_swap: true
+        dns_resolver_tls_cert_src: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/tls/fullchain.pem"
+        dns_resolver_tls_key_src: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/tls/privkey.pem"
+        dns_resolver_tls_ca_bundle: /root/testca/ca.pem
+        dns_resolver_metrics_allowed_sources_v4:
+          - 198.51.100.10
+        # CI builds the binaries and sets DNS_RESOLVER_ARTIFACTS while the role
+        # does not pin a release yet. Otherwise the pinned release is used.
+        dns_resolver_hickory_src: >-
+          {{ (lookup('ansible.builtin.env', 'DNS_RESOLVER_ARTIFACTS') ~ '/hickory-dns')
+             if lookup('ansible.builtin.env', 'DNS_RESOLVER_ARTIFACTS') else '' }}
+        dns_resolver_encrypted_dns_src: >-
+          {{ (lookup('ansible.builtin.env', 'DNS_RESOLVER_ARTIFACTS') ~ '/encrypted-dns')
+             if lookup('ansible.builtin.env', 'DNS_RESOLVER_ARTIFACTS') else '' }}
+verifier:
+  name: ansible
+scenario:
+  # The tests break the DNSCrypt state on purpose, so there is no idempotence step.
+  test_sequence:
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - verify
+    - destroy

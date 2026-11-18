@@ -1,0 +1,34 @@
+---
+# Set up a new DNSCrypt identity, then switch to published mode with the key
+# pinned, the way an operator would.
+- name: Converge in provisioning mode
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Run the role (new identity)
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') | basename }}"
+
+    - name: Read the new provider key
+      ansible.builtin.slurp:
+        src: /var/lib/encrypted-dns/provider.pub
+      register: pub
+
+    - name: Read the new state for the backup
+      ansible.builtin.slurp:
+        src: /var/lib/encrypted-dns/encrypted-dns.state
+      register: state
+
+    - name: Keep the key and the backup for the published run
+      ansible.builtin.set_fact:
+        dns_resolver_dnscrypt_provider_pubkey: "{{ pub.content | b64decode | trim }}"
+        dns_resolver_dnscrypt_state_backup: "{{ state.content | b64decode }}"
+        dns_resolver_dnscrypt_published: true
+
+- name: Converge in published mode
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Run the role (published identity)
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') | basename }}"

@@ -1,0 +1,26 @@
+---
+- name: Copy the good state back
+  ansible.builtin.copy:
+    src: /root/good.state
+    dest: /var/lib/encrypted-dns/encrypted-dns.state
+    remote_src: true
+    owner: encrypted-dns
+    group: encrypted-dns
+    mode: "0600"
+
+- name: Clear the failed state of the unit
+  ansible.builtin.command: systemctl reset-failed encrypted-dns.service
+  changed_when: true
+  failed_when: false
+
+- name: Start encrypted-dns with the good state
+  ansible.builtin.systemd_service:
+    name: encrypted-dns.service
+    state: restarted
+
+- name: Wait for the DNSCrypt listener
+  ansible.builtin.wait_for:
+    host: 192.0.2.53
+    port: 8443
+    delay: 4
+    timeout: 60

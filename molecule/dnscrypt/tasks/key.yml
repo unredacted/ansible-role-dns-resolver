@@ -1,0 +1,13 @@
+---
+# Read the provider public key from the state file into `current_key`.
+- name: Read the state's public key
+  ansible.builtin.command: >-
+    python3 -c "import tomllib; s = tomllib.load(open('/var/lib/encrypted-dns/encrypted-dns.state', 'rb'));
+    print(bytes(s['provider_kp']['pk']).hex())"
+  register: key
+  changed_when: false
+  failed_when: false
+
+- name: Keep the key
+  ansible.builtin.set_fact:
+    current_key: "{{ key.stdout | trim }}"

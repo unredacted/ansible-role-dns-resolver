@@ -106,6 +106,31 @@ for each one.
 | `dns_resolver_hickory_memory_max` | `2G` | Memory limit for Hickory. |
 | `dns_resolver_allow_disk_swap` | `false` | Allow running with swap on disk. |
 | `dns_resolver_binary_release` and the URL and SHA-256 variables | set by CI | The pinned binary release. |
+| `dns_resolver_dnscrypt_enabled` | `true` | Run encrypted-dns-server (DNSCrypt). |
+| `dns_resolver_dnscrypt_published` | `false` | `true` once stamps are public. Pins the provider key. |
+| `dns_resolver_dnscrypt_provider_pubkey` | `""` | The pinned provider key (hex). |
+| `dns_resolver_dnscrypt_state_backup` | `""` | Backup of the state file. Keep it in a vault. |
+| `dns_resolver_dnscrypt_rate_limit_qps` | `50` | DNSCrypt queries per second per client. |
+
+## DNSCrypt identity
+
+A DNSCrypt stamp contains the server's provider public key. If the key
+changes, every published stamp stops working. encrypted-dns-server keeps the
+key in its state file, and creates a new key whenever it cannot read that
+file. The role guards against this:
+
+1. On a new server, leave `dns_resolver_dnscrypt_published: false`. The role
+   starts encrypted-dns, which creates a key, and prints it.
+2. Copy `/var/lib/encrypted-dns/encrypted-dns.state` into
+   `dns_resolver_dnscrypt_state_backup` (in a vault), set
+   `dns_resolver_dnscrypt_provider_pubkey` to the printed key, set
+   `dns_resolver_dnscrypt_published: true`, and run the role again.
+3. From then on, the service only starts when the state file holds that key.
+   If encrypted-dns still makes a new key, a check after start puts the saved
+   file back, stops the service, and sets
+   `dns_resolver_dnscrypt_identity_restored 1` in the node_exporter textfile
+   directory. A missing state file is restored from the backup; with no
+   backup, the role stops instead of creating a new identity.
 
 ## Binaries
 

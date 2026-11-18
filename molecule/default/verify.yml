@@ -338,3 +338,119 @@
             (sandbox.stdout | regex_search('Overall exposure level for [^ ]+ ([0-9.]+)', '\\1') | first | float) <= 2.0
         fail_msg: "{{ sandbox.stdout_lines | select('search', 'Overall') | list }}"
         quiet: true
+
+- name: Verify DNSCrypt
+  hosts: all
+  gather_facts: false
+  vars:
+    resolver_v4: 192.0.2.53
+    resolver_v6: 2001:db8::53
+    provider: 2.dnscrypt-cert.dns1.example.net
+    in_client: ip netns exec client
+  tasks:
+    - name: Copy the certificate helper
+      ansible.builtin.copy:
+        src: dnscrypt_certs.py
+        dest: /root/dnscrypt_certs.py
+        mode: "0644"
+
+    - name: Fetch the DNSCrypt certificates on both families
+      ansible.builtin.command: "{{ in_client }} python3 /root/dnscrypt_certs.py {{ item }} 8443 {{ provider }}"
+      loop: ["{{ resolver_v4 }}", "{{ resolver_v6 }}"]
+      register: certs
+      changed_when: false
+
+    - name: Check that classic and post-quantum certificates are offered
+      ansible.builtin.assert:
+        that:
+          - 2 in (item.stdout | from_json).versions
+          - 3 in (item.stdout | from_json).versions
+        quiet: true
+      loop: "{{ certs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Read the provider public key
+      ansible.builtin.slurp:
+        src: /var/lib/encrypted-dns/provider.pub
+      register: pub
+
+    - name: Write a dnscrypt-proxy config pinned to our stamps
+      ansible.builtin.copy:
+        dest: /root/dnscrypt-proxy.toml
+        mode: "0644"
+        content: |
+          listen_addresses = ['127.0.0.1:5353']
+          server_names = ['test-v4', 'test-v6']
+          ipv6_servers = true
+          dnscrypt_servers = true
+          doh_servers = false
+          require_dnssec = true
+          require_nolog = true
+          require_nofilter = true
+          cache = false
+          # No internet in the test namespace: skip the connectivity probe.
+          netprobe_timeout = 0
+          ignore_system_dns = true
+          [static]
+            [static.'test-v4']
+            stamp = '{{ 'dnscrypt' | dns_resolver_stamp(resolver_v4, 8443, provider_pubkey=pubkey, provider_name=provider) }}'
+            [static.'test-v6']
+            stamp = '{{ 'dnscrypt' | dns_resolver_stamp(resolver_v6, 8443, provider_pubkey=pubkey, provider_name=provider) }}'
+      vars:
+        pubkey: "{{ pub.content | b64decode | trim }}"
+
+    - name: Resolve through dnscrypt-proxy (UDP and TCP to the server)
+      ansible.builtin.shell: |
+        set -o pipefail
+        {{ in_client }} dnscrypt-proxy -config /root/dnscrypt-proxy.toml > /root/dnscrypt-proxy.log 2>&1 &
+        proxy=$!
+        sleep 5
+        rc=0
+        for transport in "" "+tcp"; do
+          {{ in_client }} kdig @127.0.0.1 -p 5353 $transport +timeout=5 +retry=2 ietf.org A | grep -q 'status: NOERROR' || rc=1
+        done
+        kill $proxy
+        exit $rc
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Read encrypted-dns's metrics
+      ansible.builtin.uri:
+        url: http://127.0.0.1:9154/metrics
+        return_content: true
+      register: edns_metrics
+
+    - name: Check that encrypted-dns's metrics hold no query data
+      ansible.builtin.assert:
+        that:
+          - "'ietf' not in edns_metrics.content"
+          - "'198.51.100.10' not in edns_metrics.content"
+        quiet: true
+
+    - name: Read the DNSCrypt state mode
+      ansible.builtin.stat:
+        path: /var/lib/encrypted-dns/encrypted-dns.state
+      register: state
+
+    - name: Check that only its owner can read the state
+      ansible.builtin.assert:
+        that:
+          - state.stat.mode == '0600'
+          - state.stat.pw_name == 'encrypted-dns'
+        quiet: true
+
+    - name: Score encrypted-dns's sandbox
+      ansible.builtin.command: systemd-analyze security --no-pager encrypted-dns.service
+      register: edns_sandbox
+      changed_when: false
+      failed_when: false
+
+    - name: Check the sandbox score
+      ansible.builtin.assert:
+        that:
+          - >-
+            (edns_sandbox.stdout | regex_search('Overall exposure level for [^ ]+ ([0-9.]+)', '\\1') | first | float) <= 2.0
+        fail_msg: "{{ edns_sandbox.stdout_lines | select('search', 'Overall') | list }}"
+        quiet: true
