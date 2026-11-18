@@ -33,7 +33,8 @@ def main(audit_path, runtime_path, label):
         for item in items:
             pkg = item.get("package", {})
             advisory = item.get("advisory") or {}
-            warnings.append(f"{kind} {advisory.get('id', '')} {pkg.get('name')}@{pkg.get('version')}")
+            name = f"{pkg.get('name')}@{pkg.get('version')}"
+            warnings.append(f"{kind} {advisory.get('id', '')} {name}")
 
     for title, items in (
         ("build-time only (not in the binary)", build_only),
