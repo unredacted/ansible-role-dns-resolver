@@ -37,7 +37,7 @@ echo "== hickory-dns ${hickory_version}"
 cd /src/build/hickory-dns
 grep -q "^hickory-dns = { version = \"=${hickory_version}\"" Cargo.toml \
   || { echo "Cargo.toml does not pin hickory-dns =${hickory_version}" >&2; exit 1; }
-cargo deny --locked check --config ../deny.toml advisories bans licenses
+cargo deny --locked check advisories bans licenses  # reads deny.toml, a link to ../deny.toml
 cargo audit --deny warnings --file Cargo.lock
 if cargo tree --locked --target "$target" -e normal,build -i ring >/dev/null 2>&1; then
   echo "ring is in the hickory-dns build graph; aws-lc-rs must be the only TLS crypto provider" >&2
@@ -57,7 +57,8 @@ echo "${edns_sha}  $work/edns.crate" | sha256sum -c -
 tar -xzf "$work/edns.crate" -C "$work"
 cd "$work/encrypted-dns-${edns_version}"
 test -f Cargo.lock || { echo "the crate has no Cargo.lock" >&2; exit 1; }
-cargo deny --locked check --config /src/build/deny.toml advisories
+cp /src/build/deny.toml deny.toml
+cargo deny --locked check advisories
 cargo audit --deny warnings --file Cargo.lock
 cargo auditable build --locked --release --target "$target"
 install -m 0755 "target/$target/release/encrypted-dns" "$out/encrypted-dns"
