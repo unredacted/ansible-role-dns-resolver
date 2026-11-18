@@ -1,10 +1,14 @@
 """Fetch a DNSCrypt server's certificates and print their versions as JSON.
 
-Usage: dnscrypt_certs.py <address> <port> <provider name>
+Usage: dnscrypt_certs.py <address> <port> <provider name> <udp|tcp>
 
 The certificates are TXT records for the provider name, answered over plain
 DNS on the DNSCrypt port. Each one starts with "DNSC" and a 2-byte version:
 2 is the classic X25519 construction, 3 is post-quantum (X-Wing).
+
+Over UDP the server may not answer with more than it was sent, so the large
+post-quantum certificate is left out and the TC bit is set; over TCP every
+certificate is sent. Prints {"versions": [...], "truncated": bool}.
 """
 
 import json
@@ -29,12 +33,23 @@ def skip_name(data, offset):
         offset += 1 + length
 
 
-def main(address, port, provider):
+def ask(address, port, provider, transport):
     family = socket.AF_INET6 if ":" in address else socket.AF_INET
-    sock = socket.socket(family, socket.SOCK_DGRAM)
-    sock.settimeout(5)
-    sock.sendto(query(provider), (address, int(port)))
-    data, _ = sock.recvfrom(65535)
+    if transport == "udp":
+        sock = socket.socket(family, socket.SOCK_DGRAM)
+        sock.settimeout(5)
+        sock.sendto(query(provider), (address, int(port)))
+        return sock.recvfrom(65535)[0]
+    sock = socket.create_connection((address, int(port)), timeout=5)
+    message = query(provider)
+    sock.sendall(struct.pack(">H", len(message)) + message)
+    length = struct.unpack(">H", sock.recv(2, socket.MSG_WAITALL))[0]
+    return sock.recv(length, socket.MSG_WAITALL)
+
+
+def main(address, port, provider, transport):
+    data = ask(address, port, provider, transport)
+    truncated = bool(data[2] & 0x02)
     answers = struct.unpack(">H", data[6:8])[0]
     offset = skip_name(data, 12) + 4
     versions = []
@@ -52,8 +67,8 @@ def main(address, port, provider):
             i += 1 + rdata[i]
         if blob[:4] == b"DNSC":
             versions.append(struct.unpack(">H", blob[4:6])[0])
-    print(json.dumps({"versions": sorted(versions)}))
+    print(json.dumps({"versions": sorted(versions), "truncated": truncated}))
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:4])
+    main(*sys.argv[1:5])
