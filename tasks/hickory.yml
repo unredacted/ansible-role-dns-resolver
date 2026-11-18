@@ -43,6 +43,17 @@
     - /etc/hickory
     - /etc/hickory/staging
 
+# Hickory reads the trust anchor only at start, and the configuration names
+# just its path, so record its checksum to restart Hickory when it changes.
+- name: Record the trust anchor checksum
+  ansible.builtin.copy:
+    dest: /etc/hickory/trust-anchor.sha256
+    content: "{{ dns_resolver_trust_anchor.content | b64decode | hash('sha256') }}\n"
+    owner: root
+    group: "{{ dns_resolver_hickory_user }}"
+    mode: "0640"
+  notify: Restart hickory-dns
+
 # --validate parses the configuration and returns before it loads the
 # certificate or opens sockets. The checks after the restart test those.
 - name: Render and check the Hickory configuration
@@ -93,4 +104,7 @@
     timeout: 60
 
 - name: Check that Hickory resolves and validates over loopback DoT
-  ansible.builtin.include_tasks: check_resolution.yml
+  ansible.builtin.include_tasks:
+    file: check_resolution.yml
+    apply:
+      tags: [dns_resolver, dns_resolver_hickory]
