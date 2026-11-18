@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Get, install and check the TLS certificate that Hickory serves.
 #
-#   dns-resolver-cert install   First issuance on a new host. Gets a certificate
-#                               if there is none, stages it, checks it, and
-#                               points "current" at it. Does not touch Hickory.
+#   dns-resolver-cert install   Gets a certificate if lego has none for the
+#                               current host names (or renews one that is due),
+#                               stages it, checks it, and points "current" at
+#                               it. Prints "unchanged" when "current" already
+#                               has it. Does not restart Hickory.
 #   dns-resolver-cert renew     Renew with lego if due, and nothing else. The
 #                               next "sync" installs the result.
 #   dns-resolver-cert sync      From the timer. Renews if due (a failed renewal
@@ -14,7 +16,7 @@
 # Settings come from /etc/dns-resolver/cert.env (written by the role) and the
 # ACME provider's secrets from /etc/dns-resolver/acme.env (mode 0600).
 #
-# Layout: $TLS_DIR/releases/<sha256 of chain>/{fullchain,privkey}.pem, with
+# Layout: $TLS_DIR/releases/<sha256 of chain and key>/{fullchain,privkey}.pem, with
 # "current" and "previous" links. lego writes .crt and .key files; Hickory needs
 # a .pem certificate name and reads a .key file as DER, so both are restaged as
 # .pem.
@@ -54,6 +56,27 @@ issued_paths() {
   issued_key="$LEGO_PATH/certificates/${names[0]}.key"
 }
 
+# True if lego's certificate covers exactly the configured host names. lego's
+# renew keeps the old name list, so a changed list needs a new order.
+issued_names_match() {
+  [ -s "$issued_crt" ] || return 1
+  local have want
+  have=$(openssl x509 -in "$issued_crt" -noout -ext subjectAltName 2>/dev/null \
+    | grep -o 'DNS:[^,[:space:]]*' | cut -c5- | tr '[:upper:]' '[:lower:]' | sort -u)
+  want=$(printf '%s\n' "${names[@]}" | sed 's/\.$//' | tr '[:upper:]' '[:lower:]' | sort -u)
+  [ "$have" = "$want" ]
+}
+
+# Get a new certificate when the names changed, otherwise renew if due.
+obtain() {
+  if issued_names_match; then
+    lego_cmd renew --days "${RENEW_DAYS:-30}" --no-random-sleep
+  else
+    log "getting a certificate for ${names[*]}"
+    lego_cmd run
+  fi
+}
+
 # Check a chain and key as the service user: readable, matching, all names
 # present, not about to expire, and trusted by the CA bundle.
 verify_pair() {
@@ -76,10 +99,11 @@ verify_pair() {
   rm -f "$leaf"
 }
 
-# Copy the issued pair into a new release directory and print its path.
+# Copy the issued pair into a new release directory and print its path. The
+# directory is named after both files, so a corrected key gets a new one.
 stage() {
   local release dir
-  release=$(sha256sum "$issued_crt" | cut -c1-64)
+  release=$(cat "$issued_crt" "$issued_key" | sha256sum | cut -c1-64)
   dir="$TLS_DIR/releases/$release"
   if [ ! -d "$dir" ]; then
     install -d -m 0750 -o root -g "$SERVICE_USER" "$dir.tmp"
@@ -181,9 +205,11 @@ write_metrics() {  # write_metrics <name value>...
 
 cmd_install() {
   issued_paths
-  if [ ! -s "$issued_crt" ]; then
-    log "getting a certificate for ${names[*]}"
-    lego_cmd run
+  obtain
+  if [ -e "$TLS_DIR/current/fullchain.pem" ] && cmp -s "$issued_crt" "$TLS_DIR/current/fullchain.pem" \
+     && cmp -s "$issued_key" "$TLS_DIR/current/privkey.pem"; then
+    log "unchanged"
+    return 0
   fi
   local dir
   dir=$(stage)
@@ -195,14 +221,15 @@ cmd_install() {
 cmd_sync() {
   local renew_ok=1 activation_failed=0
   issued_paths
-  if ! lego_cmd renew --days "${RENEW_DAYS:-30}" --no-random-sleep; then
+  if ! obtain; then
     renew_ok=0
     log "renewal failed; going on with the certificate lego already has"
   fi
 
   local current_dir new_dir expected
   current_dir=$(readlink -f "$TLS_DIR/current")
-  if [ -s "$issued_crt" ] && ! cmp -s "$issued_crt" "$current_dir/fullchain.pem"; then
+  if [ -s "$issued_crt" ] && { ! cmp -s "$issued_crt" "$current_dir/fullchain.pem" \
+       || ! cmp -s "$issued_key" "$current_dir/privkey.pem"; }; then
     new_dir=$(stage)
     if verify_pair "$new_dir/fullchain.pem" "$new_dir/privkey.pem"; then
       log "activating $(basename "$new_dir")"
@@ -244,7 +271,7 @@ cmd_sync() {
 
 case ${1:-} in
   install) cmd_install ;;
-  renew) lego_cmd renew --days "${RENEW_DAYS:-30}" --no-random-sleep ;;
+  renew) issued_paths; obtain ;;
   sync) cmd_sync ;;
   *) echo "usage: $0 install|renew|sync" >&2; exit 2 ;;
 esac

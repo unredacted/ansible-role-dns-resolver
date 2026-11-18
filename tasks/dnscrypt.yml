@@ -17,13 +17,8 @@
     group: root
     mode: "0755"
 
-- name: Create the node_exporter textfile directory
-  ansible.builtin.file:
-    path: "{{ dns_resolver_textfile_dir }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
+- name: Make sure the node_exporter textfile directory exists
+  ansible.builtin.import_tasks: textfile_dir.yml
 
 - name: Install the DNSCrypt state check
   ansible.builtin.copy:
