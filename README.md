@@ -157,8 +157,13 @@ file. The role guards against this:
    If encrypted-dns still makes a new key, a check after start puts the saved
    file back, stops the service, and sets
    `dns_resolver_dnscrypt_identity_restored 1` in the node_exporter textfile
-   directory. A missing state file is restored from the backup; with no
-   backup, the role stops instead of creating a new identity.
+   directory. The alert stays on until you remove
+   `/var/lib/dns-resolver/dnscrypt/identity-restored`. A missing state file is
+   restored from the backup; with no backup, the role stops instead of
+   creating a new identity.
+4. Stamps also contain the provider name. Once published, the role refuses to
+   change `dns_resolver_dnscrypt_provider_name`, so set it explicitly rather
+   than relying on the default, which follows the first host name.
 
 ## Binaries
 

@@ -32,10 +32,29 @@
     - /etc/nftables.d/dns-resolver.nft
   register: dns_resolver_fw_files
 
+# The live table can differ from the committed file (deleted or edited by
+# hand). Compare it with the fingerprint recorded at the last commit; per-source
+# entries and counters are left out of the fingerprint.
+- name: Read the live firewall table
+  ansible.builtin.command: nft -j -s list table inet dns_resolver
+  register: dns_resolver_fw_live
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Read the fingerprint recorded at the last commit
+  ansible.builtin.slurp:
+    src: /etc/nftables.d/dns-resolver.nft.fingerprint
+  register: dns_resolver_fw_recorded
+  failed_when: false
+
 - name: Apply the candidate policy with a rollback timer
   when: >-
     not dns_resolver_fw_files.results[1].stat.exists
     or dns_resolver_fw_files.results[0].stat.checksum != dns_resolver_fw_files.results[1].stat.checksum
+    or (dns_resolver_fw_live.stdout | default('') | dns_resolver_nft_fingerprint) == ''
+    or (dns_resolver_fw_live.stdout | dns_resolver_nft_fingerprint)
+       != (dns_resolver_fw_recorded.content | default('') | b64decode | trim)
   block:
     - name: Save the committed policy as the rollback file
       ansible.builtin.copy:
@@ -76,13 +95,29 @@
       changed_when: true
 
     - name: Run the checks after loading the policy
-      ansible.builtin.include_tasks: firewall_checks.yml
+      ansible.builtin.include_tasks:
+        file: firewall_checks.yml
+        apply:
+          tags: [dns_resolver, dns_resolver_firewall]
 
     - name: Commit the candidate as the boot policy
       ansible.builtin.copy:
         src: /etc/nftables.d/staging/dns-resolver.nft
         dest: /etc/nftables.d/dns-resolver.nft
         remote_src: true
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Read the table as committed
+      ansible.builtin.command: nft -j -s list table inet dns_resolver
+      register: dns_resolver_fw_committed_live
+      changed_when: false
+
+    - name: Record its fingerprint for drift checks
+      ansible.builtin.copy:
+        dest: /etc/nftables.d/dns-resolver.nft.fingerprint
+        content: "{{ dns_resolver_fw_committed_live.stdout | dns_resolver_nft_fingerprint }}\n"
         owner: root
         group: root
         mode: "0600"
