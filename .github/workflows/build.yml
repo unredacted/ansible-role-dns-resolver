@@ -54,7 +54,12 @@ jobs:
   release:
     name: Release
     needs: build
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Only when this workflow runs on its own. When another workflow calls it
+    # (for test binaries), the github context belongs to the caller.
+    if: >-
+      github.workflow == 'Build binaries'
+      && github.event_name != 'pull_request'
+      && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
