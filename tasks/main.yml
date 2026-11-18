@@ -40,6 +40,23 @@
   ansible.builtin.import_tasks: hickory.yml
   tags: [dns_resolver, dns_resolver_hickory]
 
+- name: Set up DNSCrypt
+  ansible.builtin.include_tasks:
+    file: dnscrypt.yml
+    apply:
+      tags: [dns_resolver, dns_resolver_dnscrypt]
+  when: dns_resolver_dnscrypt_enabled
+  tags: [dns_resolver, dns_resolver_dnscrypt]
+
+- name: Stop DNSCrypt when it is turned off
+  ansible.builtin.systemd_service:
+    name: encrypted-dns.service
+    state: stopped
+    enabled: false
+  when: not dns_resolver_dnscrypt_enabled
+  failed_when: false
+  tags: [dns_resolver, dns_resolver_dnscrypt]
+
 - name: Apply the full firewall policy
   ansible.builtin.include_tasks:
     file: firewall_apply.yml

@@ -13,9 +13,20 @@
   tasks:
     - name: Install test tools
       ansible.builtin.apt:
-        name: [iproute2, knot-dnsutils, curl, openssl, python3-cryptography]
+        name: [iproute2, knot-dnsutils, curl, openssl, dnscrypt-proxy]
         state: present
         update_cache: true
+        policy_rc_d: 101
+
+    # Only used as a test client; keep Debian's service from taking port 53.
+    - name: Keep the dnscrypt-proxy service from running
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: false
+        masked: true
+        state: stopped
+      loop: [dnscrypt-proxy.socket, dnscrypt-proxy.service]
+      failed_when: false
 
     - name: Create the client namespace and link
       ansible.builtin.shell: |

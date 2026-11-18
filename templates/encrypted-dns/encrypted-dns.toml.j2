@@ -1,0 +1,53 @@
+# {{ ansible_managed }}
+# encrypted-dns-server: answers DNSCrypt and passes queries to Hickory on
+# loopback. No client IP reflection (my_ip), no relaying, no filtering.
+
+listen_addrs = [
+{% for addr in dns_resolver_listen_v4 %}
+  { local = "{{ addr }}:{{ dns_resolver_dnscrypt_port }}", external = "{{ addr }}:{{ dns_resolver_dnscrypt_port }}" },
+{% endfor %}
+{% for addr in dns_resolver_listen_v6 %}
+  { local = "[{{ addr }}]:{{ dns_resolver_dnscrypt_port }}", external = "[{{ addr }}]:{{ dns_resolver_dnscrypt_port }}" },
+{% endfor %}
+]
+upstream_addrs = ["127.0.0.1:{{ dns_resolver_plain_loopback_port }}"]
+state_file = "/var/lib/encrypted-dns/encrypted-dns.state"
+udp_timeout = 10
+tcp_timeout = 10
+udp_max_active_connections = {{ dns_resolver_dnscrypt_udp_max_active }}
+tcp_max_active_connections = {{ dns_resolver_dnscrypt_tcp_max_active }}
+cache_capacity = {{ dns_resolver_dnscrypt_cache_capacity }}
+cache_ttl_min = {{ dns_resolver_dnscrypt_cache_ttl_min }}
+cache_ttl_max = {{ dns_resolver_dnscrypt_cache_ttl_max }}
+cache_ttl_error = {{ dns_resolver_dnscrypt_cache_ttl_error }}
+client_ttl_holdon = 0
+daemonize = false
+
+[dnscrypt]
+provider_name = {{ dns_resolver_dnscrypt_provider_name | to_json }}
+pq_enabled = {{ dns_resolver_dnscrypt_pq_enabled | bool | lower }}
+dnssec = true
+no_filters = true
+no_logs = true
+key_cache_capacity = 10000
+
+[tls]
+
+[quic]
+
+[filtering]
+
+[metrics]
+type = "prometheus"
+listen_addr = "{{ ('[' ~ dns_resolver_metrics_listen ~ ']') if ':' in dns_resolver_metrics_listen else dns_resolver_metrics_listen }}:{{ dns_resolver_dnscrypt_metrics_port }}"
+path = "/metrics"
+
+[anonymized_dns]
+enabled = false
+allowed_ports = []
+blacklisted_ips = []
+
+[rate_limit]
+enabled = true
+max_queries_per_second = {{ dns_resolver_dnscrypt_rate_limit_qps }}
+capacity = {{ dns_resolver_dnscrypt_rate_limit_capacity }}

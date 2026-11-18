@@ -27,6 +27,8 @@ provisioner:
   name: ansible
   env:
     ANSIBLE_ROLES_PATH: "${MOLECULE_PROJECT_DIRECTORY}/.."
+    # The verify playbooks use the role's filters (stamps).
+    ANSIBLE_FILTER_PLUGINS: "${MOLECULE_PROJECT_DIRECTORY}/filter_plugins"
   inventory:
     host_vars:
       dns-resolver-trixie:

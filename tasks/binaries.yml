@@ -1,4 +1,12 @@
 ---
+# On a new host the services do not exist yet, so a binary change must not
+# try to restart them; the later tasks start them. On an existing host the
+# handlers restart them.
+- name: Look for an existing encrypted-dns unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/encrypted-dns.service
+  register: dns_resolver_edns_unit
+
 - name: Describe the binaries
   ansible.builtin.set_fact:
     dns_resolver_binaries:

@@ -1,0 +1,70 @@
+# {{ ansible_managed }}
+[Unit]
+Description=encrypted-dns-server (DNSCrypt) in front of Hickory DNS
+Documentation=https://github.com/unredacted/ansible-role-dns-resolver
+Requires=dns-resolver-firewall.service hickory-dns.service
+After=dns-resolver-firewall.service hickory-dns.service network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User={{ dns_resolver_dnscrypt_user }}
+Group={{ dns_resolver_dnscrypt_user }}
+# The checks run as root (the + prefix) so they can write the metrics file and
+# keep their copy of the state in a directory the service account cannot touch.
+# The post-start check waits until encrypted-dns answers a certificate query,
+# which it does only after loading (or replacing) its state.
+ExecStartPre=+/usr/bin/python3 /usr/local/libexec/dns-resolver/dnscrypt-state-check.py pre /var/lib/encrypted-dns/encrypted-dns.state {{ dns_resolver_dnscrypt_provider_pubkey if dns_resolver_dnscrypt_published else '-' }} {{ dns_resolver_textfile_dir }}
+ExecStart=/usr/local/sbin/encrypted-dns --config /etc/encrypted-dns/encrypted-dns.toml
+ExecStartPost=+/usr/bin/python3 /usr/local/libexec/dns-resolver/dnscrypt-state-check.py post /var/lib/encrypted-dns/encrypted-dns.state {{ dns_resolver_dnscrypt_provider_pubkey if dns_resolver_dnscrypt_published else '-' }} {{ dns_resolver_textfile_dir }} --probe {{ (dns_resolver_listen_v4 + dns_resolver_listen_v6) | first }} {{ dns_resolver_dnscrypt_port }} {{ dns_resolver_dnscrypt_provider_name }}
+Restart=always
+RestartSec=2
+
+# Logs: own journal namespace, warnings and errors only.
+LogNamespace={{ dns_resolver_journal_namespace }}
+LogLevelMax=warning
+
+# Resources.
+LimitNOFILE=1048576
+LimitCORE=0
+MemoryHigh={{ dns_resolver_dnscrypt_memory_high }}
+MemoryMax={{ dns_resolver_dnscrypt_memory_max }}
+MemorySwapMax=0
+TasksMax={{ dns_resolver_dnscrypt_tasks_max }}
+
+# Sandbox.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+UMask=0077
+StateDirectory=encrypted-dns
+StateDirectoryMode=0700
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+DevicePolicy=closed
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

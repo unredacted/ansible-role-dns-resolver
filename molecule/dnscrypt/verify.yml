@@ -1,0 +1,167 @@
+---
+- name: Verify that the DNSCrypt identity never changes
+  hosts: all
+  gather_facts: false
+  vars:
+    state: /var/lib/encrypted-dns/encrypted-dns.state
+    role: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') | basename }}"
+  tasks:
+    - name: Read the pinned key
+      ansible.builtin.slurp:
+        src: /var/lib/dns-resolver/dnscrypt/provider.pub
+      register: pub
+
+    - name: Keep the pinned key and a good copy of the state
+      ansible.builtin.set_fact:
+        pinned: "{{ pub.content | b64decode | trim }}"
+
+    - name: Save a good copy of the state
+      ansible.builtin.copy:
+        src: "{{ state }}"
+        dest: /root/good.state
+        remote_src: true
+        mode: "0600"
+
+    - name: Read the unit settings
+      ansible.builtin.systemd_service:
+        name: encrypted-dns.service
+      register: unit
+
+    - name: Check that the service runs with the pinned key and a private umask
+      ansible.builtin.assert:
+        that:
+          - unit.status.ActiveState == 'active'
+          - unit.status.UMask == '0077'
+          - pinned in unit.status.ExecStartPre
+        quiet: true
+
+    # 1. A crash and an automatic restart keep the key.
+    - name: Kill encrypted-dns
+      ansible.builtin.command: systemctl kill -s KILL encrypted-dns.service
+      changed_when: true
+
+    - name: Wait for the automatic restart
+      ansible.builtin.wait_for:
+        host: 192.0.2.53
+        port: 8443
+        delay: 5
+        timeout: 60
+
+    - name: Read the key after the restart
+      ansible.builtin.include_tasks: tasks/key.yml
+
+    - name: Check the key after the restart
+      ansible.builtin.assert:
+        that:
+          - current_key == pinned
+        quiet: true
+
+    # 2. A corrupt state stops the service before it starts; no new key.
+    - name: Corrupt the state
+      ansible.builtin.copy:
+        dest: "{{ state }}"
+        content: "[provider_kp\n"
+        owner: encrypted-dns
+        group: encrypted-dns
+        mode: "0600"
+
+    - name: Restart with the corrupt state
+      ansible.builtin.systemd_service:
+        name: encrypted-dns.service
+        state: restarted
+      register: corrupt_restart
+      failed_when: corrupt_restart is succeeded
+
+    - name: Read the state after the failed start
+      ansible.builtin.slurp:
+        src: "{{ state }}"
+      register: after_corrupt
+
+    - name: Check that no new key was written
+      ansible.builtin.assert:
+        that:
+          - (after_corrupt.content | b64decode) == "[provider_kp\n"
+        quiet: true
+
+    - name: Put the good state back
+      ansible.builtin.include_tasks: tasks/restore.yml
+
+    # 3. A state that passes the check but that encrypted-dns cannot load:
+    #    encrypted-dns makes a new key; ExecStartPost puts the old state back,
+    #    stops the service and raises the alert metric.
+    - name: Write a state encrypted-dns cannot load but the check accepts
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        python3 -c "import tomllib; s = tomllib.load(open('/root/good.state', 'rb'));
+        kp = s['provider_kp'];
+        print('[provider_kp]'); print('sk =', kp['sk']); print('pk =', kp['pk']);
+        print('[[dnscrypt_encryption_params_set]]'); print('unexpected = 1')" > {{ state }}
+        && chown encrypted-dns:encrypted-dns {{ state }} && chmod 0600 {{ state }}
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Restart with the state encrypted-dns rejects
+      ansible.builtin.systemd_service:
+        name: encrypted-dns.service
+        state: restarted
+      register: rejected_restart
+      failed_when: false
+
+    - name: Give systemd time to give up
+      ansible.builtin.pause:
+        seconds: 45
+
+    - name: Read the key after the rejected start
+      ansible.builtin.include_tasks: tasks/key.yml
+
+    - name: Read the alert metric
+      ansible.builtin.slurp:
+        src: /var/lib/prometheus/node-exporter/dns_resolver_dnscrypt.prom
+      register: metric
+
+    - name: Check that the old key is back and the alert was raised
+      ansible.builtin.assert:
+        that:
+          - current_key == pinned
+          - "'dns_resolver_dnscrypt_identity_restored 1' in (metric.content | b64decode)"
+        quiet: true
+
+    - name: Put the good state back again
+      ansible.builtin.include_tasks: tasks/restore.yml
+
+    # 4. Published mode with no state and no backup: the role stops.
+    - name: Remove the state
+      ansible.builtin.file:
+        path: "{{ state }}"
+        state: absent
+
+    - name: Run the role without state and without a backup
+      block:
+        - name: Run the role
+          ansible.builtin.include_role:
+            name: "{{ role }}"
+          vars:
+            dns_resolver_dnscrypt_published: true
+            dns_resolver_dnscrypt_provider_pubkey: "{{ pinned }}"
+            dns_resolver_dnscrypt_state_backup: ""
+
+        - name: The role should have stopped
+          ansible.builtin.fail:
+            msg: The role ran although the published state was missing.
+      rescue:
+        - name: Note the expected stop
+          ansible.builtin.set_fact:
+            stopped_without_state: true
+
+    - name: Check that the role stopped and made no key
+      ansible.builtin.stat:
+        path: "{{ state }}"
+      register: no_state
+
+    - name: Check the result
+      ansible.builtin.assert:
+        that:
+          - stopped_without_state | default(false)
+          - not no_state.stat.exists
+        quiet: true

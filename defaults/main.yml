@@ -183,3 +183,39 @@ dns_resolver_post_check_signed_name: ietf.org
 # A zone under which a random label is looked up, so the answer cannot come
 # from the cache. Any NOERROR or NXDOMAIN answer passes; SERVFAIL fails.
 dns_resolver_post_check_nonce_zone: example.com
+
+# --- DNSCrypt (encrypted-dns-server) --------------------------------------------
+
+# Provider name clients see. DNSCrypt requires the "2.dnscrypt-cert." prefix.
+# Stamps contain it, so set it explicitly before publishing. In published mode
+# the role refuses to change it.
+dns_resolver_dnscrypt_provider_name: "2.dnscrypt-cert.{{ dns_resolver_hostnames[0] }}"
+# Also offer post-quantum certificates (X-Wing). Older clients keep using the
+# classic ones.
+dns_resolver_dnscrypt_pq_enabled: true
+# false while setting up a new server: encrypted-dns may create its provider
+# key, and the role prints it. Once stamps are published, set true and set
+# dns_resolver_dnscrypt_provider_pubkey; the service then refuses to start
+# with any other key.
+dns_resolver_dnscrypt_published: false
+# The provider public key in hex (64 characters), as the role prints it.
+dns_resolver_dnscrypt_provider_pubkey: ""
+# A backup of the state file, restored when the file is missing. Keep it in a
+# vault: it holds the provider's secret key.
+dns_resolver_dnscrypt_state_backup: ""
+# Per-client rate limit inside encrypted-dns. It sees each client's address,
+# unlike Hickory, which only sees encrypted-dns on loopback.
+dns_resolver_dnscrypt_rate_limit_qps: 50
+dns_resolver_dnscrypt_rate_limit_capacity: 100000
+dns_resolver_dnscrypt_udp_max_active: 4000
+dns_resolver_dnscrypt_tcp_max_active: 1000
+# encrypted-dns has its own cache. These values keep it close to the TTLs the
+# authoritative servers set. Note: when Hickory answers with an error,
+# encrypted-dns may serve the cached copy of a name instead (see Known issues).
+dns_resolver_dnscrypt_cache_capacity: 50000
+dns_resolver_dnscrypt_cache_ttl_min: 1
+dns_resolver_dnscrypt_cache_ttl_max: 86400
+dns_resolver_dnscrypt_cache_ttl_error: 2
+dns_resolver_dnscrypt_memory_high: 512M
+dns_resolver_dnscrypt_memory_max: 768M
+dns_resolver_dnscrypt_tasks_max: 1024
