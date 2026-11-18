@@ -77,11 +77,11 @@ dns_resolver_firewall_rollback_seconds: 180
 
 # Release of this repository that provides the binaries. A CI workflow updates
 # these five values together after each release.
-dns_resolver_binary_release: ""
-dns_resolver_hickory_url: ""
-dns_resolver_hickory_sha256: ""
-dns_resolver_encrypted_dns_url: ""
-dns_resolver_encrypted_dns_sha256: ""
+dns_resolver_binary_release: "binaries-20261118-e9832e8"
+dns_resolver_hickory_url: "https://github.com/unredacted/ansible-role-dns-resolver/releases/download/binaries-20261118-e9832e8/hickory-dns"
+dns_resolver_hickory_sha256: "9ad2a970a46175d7a28d6230231f706bef934bf28ac447566c6f1c62cc1553f3"
+dns_resolver_encrypted_dns_url: "https://github.com/unredacted/ansible-role-dns-resolver/releases/download/binaries-20261118-e9832e8/encrypted-dns"
+dns_resolver_encrypted_dns_sha256: "52db9f32ee5d7fd12c00e3ffc4da06ebe3985f3d36119b6729e211d20414be8f"
 # Paths on the controller. When set, these files are copied instead of
 # downloading from the release.
 dns_resolver_hickory_src: ""
