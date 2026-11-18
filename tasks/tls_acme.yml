@@ -23,6 +23,7 @@
     - { path: "{{ dns_resolver_tls_dir }}", group: "{{ dns_resolver_hickory_user }}", mode: "0750" }
     - { path: "{{ dns_resolver_tls_dir }}/releases", group: "{{ dns_resolver_hickory_user }}", mode: "0750" }
     - { path: "{{ dns_resolver_lego_path }}", group: root, mode: "0700" }
+    - { path: "{{ dns_resolver_textfile_dir }}", group: root, mode: "0755" }
 
 - name: Write the certificate settings
   ansible.builtin.template:
