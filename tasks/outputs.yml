@@ -4,7 +4,7 @@
 
 - name: Read the DNSCrypt provider key
   ansible.builtin.slurp:
-    src: /var/lib/encrypted-dns/provider.pub
+    src: /var/lib/dns-resolver/dnscrypt/provider.pub
   register: dns_resolver_out_pub
   when:
     - dns_resolver_dnscrypt_enabled
