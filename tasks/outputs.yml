@@ -1,0 +1,62 @@
+---
+# Write the DNS stamps for this server to /etc/dns-resolver/stamps.txt and
+# show them. Stamps use the first host name for DoT, DoQ and DoH.
+
+- name: Read the DNSCrypt provider key
+  ansible.builtin.slurp:
+    src: /var/lib/dns-resolver/dnscrypt/provider.pub
+  register: dns_resolver_out_pub
+  when:
+    - dns_resolver_dnscrypt_enabled
+    - not dns_resolver_dnscrypt_published
+
+- name: Work out the stamps
+  ansible.builtin.set_fact:
+    dns_resolver_stamps: "{{ dns_resolver_stamp_list }}"
+  vars:
+    dns_resolver_pubkey: >-
+      {{ dns_resolver_dnscrypt_provider_pubkey if dns_resolver_dnscrypt_published
+         else (dns_resolver_out_pub.content | default('') | b64decode | trim) }}
+    dns_resolver_stamp_list: >-
+      {%- set out = [] -%}
+      {%- for address in dns_resolver_listen_v4 + dns_resolver_listen_v6 -%}
+      {%- set _ = out.append({'protocol': 'DoT', 'address': address,
+            'stamp': 'dot' | dns_resolver_stamp(address, dns_resolver_dot_port, hostname=dns_resolver_hostnames[0])}) -%}
+      {%- set _ = out.append({'protocol': 'DoQ', 'address': address,
+            'stamp': 'doq' | dns_resolver_stamp(address, dns_resolver_doq_port, hostname=dns_resolver_hostnames[0])}) -%}
+      {%- set _ = out.append({'protocol': 'DoH (POST)', 'address': address,
+            'stamp': 'doh' | dns_resolver_stamp(address, dns_resolver_doh_port, hostname=dns_resolver_hostnames[0],
+                                                path=dns_resolver_doh_path)}) -%}
+      {%- if dns_resolver_dnscrypt_enabled and dns_resolver_pubkey | length == 64 -%}
+      {%- set _ = out.append({'protocol': 'DNSCrypt', 'address': address,
+            'stamp': 'dnscrypt' | dns_resolver_stamp(address, dns_resolver_dnscrypt_port, provider_pubkey=dns_resolver_pubkey,
+                                                     provider_name=dns_resolver_dnscrypt_provider_name)}) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+
+- name: Create the settings directory
+  ansible.builtin.file:
+    path: /etc/dns-resolver
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write the stamps
+  ansible.builtin.copy:
+    dest: /etc/dns-resolver/stamps.txt
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # DNS stamps for {{ dns_resolver_hostnames[0] }}. Written by ansible-role-dns-resolver.
+      {% for item in dns_resolver_stamps %}
+      # {{ item.protocol }} {{ item.address }}
+      {{ item.stamp }}
+      {% endfor %}
+
+- name: Show the stamps
+  ansible.builtin.debug:
+    msg: "{{ dns_resolver_stamps | map(attribute='protocol') | zip(dns_resolver_stamps | map(attribute='address'),
+            dns_resolver_stamps | map(attribute='stamp')) | map('join', ' ') | list }}"

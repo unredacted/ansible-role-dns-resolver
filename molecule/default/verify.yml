@@ -482,3 +482,44 @@
             (edns_sandbox.stdout | regex_search('Overall exposure level for [^ ]+ ([0-9.]+)', '\\1') | first | float) <= 2.0
         fail_msg: "{{ edns_sandbox.stdout_lines | select('search', 'Overall') | list }}"
         quiet: true
+
+- name: Verify metrics and stamps
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Run the metrics collector once
+      ansible.builtin.systemd_service:
+        name: dns-resolver-metrics.service
+        state: started
+
+    - name: Read the host metrics
+      ansible.builtin.slurp:
+        src: /var/lib/prometheus/node-exporter/dns_resolver_host.prom
+      register: host_metrics
+
+    - name: Check the host metrics
+      ansible.builtin.assert:
+        that:
+          - "'dns_resolver_service_active{unit=\"hickory-dns.service\"} 1' in text"
+          - "'dns_resolver_service_active{unit=\"encrypted-dns.service\"} 1' in text"
+          - "'dns_resolver_trust_anchor_key{tag=\"38696\"} 1' in text"
+          - "'dns_resolver_firewall_dropped_packets_total{rule=\"pilot\"}' in text"
+          # The unlisted test sources were dropped by the pilot rule, but the
+          # metrics never name them.
+          - "'203.0.113.5' not in text"
+          - "'198.51.100.10' not in text"
+        quiet: true
+      vars:
+        text: "{{ host_metrics.content | b64decode }}"
+
+    - name: Read the stamps
+      ansible.builtin.slurp:
+        src: /etc/dns-resolver/stamps.txt
+      register: stamps
+
+    - name: Check that every protocol has a stamp on both addresses
+      ansible.builtin.assert:
+        that:
+          - (stamps.content | b64decode).splitlines() | select('match', '^sdns://') | list | length == 8
+          - "'# DNSCrypt 2001:db8::53' in (stamps.content | b64decode)"
+        quiet: true

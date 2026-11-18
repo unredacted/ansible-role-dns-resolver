@@ -20,7 +20,9 @@ The DNS software is written in Rust:
 - Serves DNS-over-TLS (853/tcp), DNS-over-QUIC (853/udp), DNS-over-HTTPS
   (443/tcp, POST only) and DNSCrypt (8443/udp and tcp).
 - Prefers post-quantum key exchange (X25519MLKEM768) when the client supports
-  it, and falls back to X25519 when it does not.
+  it, and falls back to X25519 when it does not. For DNSCrypt, the
+  post-quantum certificate (X-Wing) is too large for a small UDP answer, so
+  encrypted-dns sends it over TCP; clients that support it fetch it there.
 - Gets TLS certificates from an ACME CA with a DNS challenge.
 - Manages its own nftables table with per-source rate limits, and can run in
   a "pilot" mode that only allows listed sources.
