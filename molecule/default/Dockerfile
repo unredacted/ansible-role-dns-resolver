@@ -8,9 +8,9 @@ ENV container=docker \
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       systemd systemd-sysv dbus python3 python3-apt sudo ca-certificates iproute2 \
- && apt-get clean \
- && rm -rf /var/lib/apt/lists/* \
  && rm -f /lib/systemd/system/multi-user.target.wants/getty.target
+# The apt lists are kept on purpose. Without them, apt's cache looks fresh to
+# Ansible (cache_valid_time) but holds no packages.
 
 STOPSIGNAL SIGRTMIN+3
 CMD ["/lib/systemd/systemd"]
