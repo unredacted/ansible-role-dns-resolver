@@ -400,7 +400,7 @@
 
     - name: Read the provider public key
       ansible.builtin.slurp:
-        src: /var/lib/encrypted-dns/provider.pub
+        src: /var/lib/dns-resolver/dnscrypt/provider.pub
       register: pub
 
     - name: Write a dnscrypt-proxy config pinned to our stamps

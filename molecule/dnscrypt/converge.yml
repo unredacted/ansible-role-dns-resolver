@@ -11,7 +11,7 @@
 
     - name: Read the new provider key
       ansible.builtin.slurp:
-        src: /var/lib/encrypted-dns/provider.pub
+        src: /var/lib/dns-resolver/dnscrypt/provider.pub
       register: pub
 
     - name: Read the new state for the backup
