@@ -53,8 +53,8 @@
 - name: Check the TLS source
   ansible.builtin.assert:
     that:
-      - dns_resolver_tls_source in ['files']
-    fail_msg: dns_resolver_tls_source must be "files".
+      - dns_resolver_tls_source in ['files', 'acme']
+    fail_msg: dns_resolver_tls_source must be "files" or "acme".
     quiet: true
 
 - name: Note whether the host is a container

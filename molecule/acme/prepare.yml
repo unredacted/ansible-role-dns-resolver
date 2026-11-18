@@ -1,0 +1,112 @@
+---
+- name: Prepare the network and test tools
+  ansible.builtin.import_playbook: ../default/prepare.yml
+
+# Pebble is Let's Encrypt's test ACME server. challtestsrv answers its DNS-01
+# lookups; lego's "exec" provider puts the challenge records there.
+- name: Prepare Pebble
+  hosts: all
+  gather_facts: false
+  vars:
+    pebble_version: v2.10.3
+    pebble_base: "https://github.com/letsencrypt/pebble/releases/download/v2.10.3"
+    pebble_raw: "https://raw.githubusercontent.com/letsencrypt/pebble/v2.10.3"
+  tasks:
+    - name: Create the Pebble directory
+      ansible.builtin.file:
+        path: /root/pebble
+        state: directory
+        mode: "0700"
+
+    - name: Download Pebble and challtestsrv
+      ansible.builtin.get_url:
+        url: "{{ pebble_base }}/{{ item.name }}"
+        dest: "/root/pebble/{{ item.name }}"
+        checksum: "sha256:{{ item.sha256 }}"
+        mode: "0644"
+      loop:
+        - { name: pebble-linux-amd64.tar.gz, sha256: 7e33cf3e426b67e9e647c44e8cc91683caa8ab331f7a99e5e27fcee291c4c7e2 }
+        - { name: pebble-challtestsrv-linux-amd64.tar.gz, sha256: 00b2c5ef525cd8ad56cda898a7cac6169a10b0fd3f2a7456fe0cec92e7b36cb6 }
+
+    - name: Download Pebble's test certificates
+      ansible.builtin.get_url:
+        url: "{{ pebble_raw }}/{{ item.path }}"
+        dest: "/root/pebble/{{ item.path | basename }}"
+        checksum: "sha256:{{ item.sha256 }}"
+        mode: "0600"
+      loop:
+        - { path: test/certs/localhost/cert.pem, sha256: c87fb918d9bac8db11aa54493b5f0cf6e0725a3fe73f617d1c64737e1ab4caf9 }
+        - { path: test/certs/localhost/key.pem, sha256: 0977979255b0e0721c17335c056b627f66a43cf56e5a52f3cda81fb111ecf00e }
+        - { path: test/certs/pebble.minica.pem, sha256: 0c502e52627ff7de972c7e9e065640103b4589b4e2d23d3fcf21bef1e3c8c67c }
+
+    - name: Unpack Pebble and challtestsrv
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd /root/pebble
+        for name in pebble pebble-challtestsrv; do
+          tar -xzf "$name-linux-amd64.tar.gz"
+          install -m 0755 "$name-linux-amd64/linux/amd64/$name" "/usr/local/bin/$name"
+        done
+      args:
+        executable: /bin/bash
+        creates: /usr/local/bin/pebble-challtestsrv
+      changed_when: true
+
+    - name: Write the Pebble config
+      ansible.builtin.copy:
+        dest: /root/pebble/pebble-config.json
+        mode: "0600"
+        content: |
+          {"pebble": {
+            "listenAddress": "127.0.0.1:14000",
+            "managementListenAddress": "127.0.0.1:15000",
+            "certificate": "/root/pebble/cert.pem",
+            "privateKey": "/root/pebble/key.pem",
+            "httpPort": 5002, "tlsPort": 5001,
+            "ocspResponderURL": "", "externalAccountBindingRequired": false,
+            "keyAlgorithm": "ecdsa",
+            "profiles": {"default": {"description": "test", "validityPeriod": 7776000}}
+          }}
+
+    - name: Start challtestsrv and Pebble
+      ansible.builtin.shell: |
+        set -euo pipefail
+        systemctl is-active -q challtestsrv || systemd-run --unit=challtestsrv \
+          /usr/local/bin/pebble-challtestsrv -dnsserver 127.0.0.1:8053 -management 127.0.0.1:8055 \
+          -http01 "" -https01 "" -tlsalpn01 "" -doh "" -defaultIPv4 127.0.0.1 -defaultIPv6 ""
+        systemctl is-active -q pebble || systemd-run --unit=pebble \
+          -E PEBBLE_VA_NOSLEEP=1 -E PEBBLE_WFE_NONCEREJECT=0 -E PEBBLE_VA_ALWAYS_VALID=0 \
+          /usr/local/bin/pebble -config /root/pebble/pebble-config.json -dnsserver 127.0.0.1:8053
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Wait for Pebble and challtestsrv
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ item }}"
+        timeout: 60
+      loop: [14000, 15000, 8055]
+
+    - name: Save Pebble's root certificate, which signs the test certificates
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        curl -sf --cacert /root/pebble/pebble.minica.pem https://localhost:15000/roots/0 > /root/pebble/root.pem
+        && test -s /root/pebble/root.pem
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Install the lego hook that talks to challtestsrv
+      ansible.builtin.copy:
+        dest: /usr/local/bin/lego-challtestsrv
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          # lego exec provider: $1 is present or cleanup, $2 the record name, $3 the value.
+          case "$1" in
+            present) path=set-txt ;;
+            cleanup) path=clear-txt ;;
+            *) exit 0 ;;
+          esac
+          curl -sf -X POST "http://127.0.0.1:8055/$path" -d "{\"host\":\"$2\",\"value\":\"$3\"}"

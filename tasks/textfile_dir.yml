@@ -1,0 +1,16 @@
+---
+# node_exporter's textfile directory may already exist and belong to another
+# collector, so only create it when it is missing.
+- name: Look for the node_exporter textfile directory
+  ansible.builtin.stat:
+    path: "{{ dns_resolver_textfile_dir }}"
+  register: dns_resolver_textfile_dir_stat
+
+- name: Create the node_exporter textfile directory
+  ansible.builtin.file:
+    path: "{{ dns_resolver_textfile_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: not dns_resolver_textfile_dir_stat.stat.exists

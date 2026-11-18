@@ -78,3 +78,31 @@
     owner: root
     group: "{{ dns_resolver_hickory_user }}"
   notify: Restart hickory-dns
+
+# A host that used ACME before keeps its renewal timer, which would put the
+# ACME certificate back. Turn it off and drop the provider secrets.
+- name: Look for the ACME renewal timer
+  ansible.builtin.stat:
+    path: /etc/systemd/system/dns-resolver-cert-sync.timer
+  register: dns_resolver_acme_timer
+
+- name: Stop and disable the ACME renewal timer
+  ansible.builtin.systemd_service:
+    name: dns-resolver-cert-sync.timer
+    state: stopped
+    enabled: false
+  when: dns_resolver_acme_timer.stat.exists
+
+- name: Remove the ACME renewal units and provider secrets
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/dns-resolver-cert-sync.timer
+    - /etc/systemd/system/dns-resolver-cert-sync.service
+    - /etc/dns-resolver/acme.env
+
+- name: Reload systemd after removing the ACME units
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: dns_resolver_acme_timer.stat.exists

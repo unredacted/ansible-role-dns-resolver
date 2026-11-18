@@ -98,7 +98,10 @@ for each one.
 | `dns_resolver_metrics_allowed_sources_v4` / `_v6` | `[]` | Who may scrape metrics. |
 | `dns_resolver_meter_pps` / `_burst` | `300` / `600` | Packets per second per source (IPv6 per /64). |
 | `dns_resolver_conn_cap_per_source` | `32` | Open connections per source. |
-| `dns_resolver_tls_source` | `files` | Where the certificate comes from. |
+| `dns_resolver_tls_source` | `files` | Where the certificate comes from: `files` or `acme`. |
+| `dns_resolver_acme_provider` / `_env` | `""` / `{}` | lego DNS provider and its settings (`acme`). |
+| `dns_resolver_acme_email` | `""` | ACME account email (`acme`). |
+| `dns_resolver_cert_sync_oncalendar` | `*-*-* 03:00:00` | When to renew. Use a different time per server. |
 | `dns_resolver_tls_cert_src` / `_key_src` | `""` | Chain and key on the controller (`files` source). |
 | `dns_resolver_qname_minimization` | `Relaxed` | `Strict` or `Relaxed`. |
 | `dns_resolver_deny_servers_extra` | `[]` | More networks Hickory must never query. |
@@ -111,6 +114,31 @@ for each one.
 | `dns_resolver_dnscrypt_provider_pubkey` | `""` | The pinned provider key (hex). |
 | `dns_resolver_dnscrypt_state_backup` | `""` | Backup of the state file. Keep it in a vault. |
 | `dns_resolver_dnscrypt_rate_limit_qps` | `50` | DNSCrypt queries per second per client. |
+
+## Certificates
+
+With `dns_resolver_tls_source: acme`, lego gets the certificate with a DNS-01
+challenge, so the server needs no open port 80. A timer runs
+`dns-resolver-cert sync` once a day:
+
+1. Renew with lego when fewer than 30 days are left. If the CA cannot be
+   reached, the run goes on with the certificate lego already has.
+2. If lego holds a certificate that is not installed yet, check it as the
+   Hickory user (readable, key matches, every host name covered, not about to
+   expire, trusted), switch the `current` link, and restart Hickory.
+3. Probe DoT, DoH and DoQ on every address and host name, and compare the
+   served certificate with the installed one. If they differ after a switch,
+   the previous certificate is put back.
+4. A probe that gets no answer is reported, but never causes a restart.
+
+Results go to `dns_resolver_tls.prom` in the node_exporter textfile directory
+(`dns_resolver_tls_leaf_match`, `dns_resolver_tls_probe_success`,
+`dns_resolver_tls_acme_renew_success`, `dns_resolver_tls_activation_failed`,
+`dns_resolver_tls_cert_expiry_timestamp_seconds`).
+
+Hickory cannot reload certificates, so a renewal restarts it. Give each
+server a different `dns_resolver_cert_sync_oncalendar` so they never restart
+together.
 
 ## DNSCrypt identity
 

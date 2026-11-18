@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Renew and check the DNS resolver's TLS certificate
+After=network-online.target hickory-dns.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/dns-resolver-cert sync
