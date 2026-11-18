@@ -41,7 +41,10 @@
   tags: [dns_resolver, dns_resolver_hickory]
 
 - name: Set up DNSCrypt
-  ansible.builtin.include_tasks: dnscrypt.yml
+  ansible.builtin.include_tasks:
+    file: dnscrypt.yml
+    apply:
+      tags: [dns_resolver, dns_resolver_dnscrypt]
   when: dns_resolver_dnscrypt_enabled
   tags: [dns_resolver, dns_resolver_dnscrypt]
 
