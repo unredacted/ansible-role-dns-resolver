@@ -100,16 +100,21 @@ leaf_fingerprint() {  # leaf_fingerprint <file>
 }
 
 # Probe one listener and print the SHA-256 fingerprint of the leaf it serves.
+# A probe is tried three times before it counts as unanswered.
 probe() {  # probe <dot|doh|doq> <address> <hostname>
-  local kind=$1 address=$2 name=$3 port flags target
+  local kind=$1 address=$2 name=$3 port flags target got attempt
   case $kind in
     dot) port=$DOT_PORT; flags=(-alpn dot) ;;
     doh) port=$DOH_PORT; flags=(-alpn h2) ;;
     doq) port=$DOQ_PORT; flags=(-quic -alpn doq) ;;
   esac
   if [[ $address == *:* ]]; then target="[$address]:$port"; else target="$address:$port"; fi
-  timeout 10 openssl s_client "${flags[@]}" -connect "$target" -servername "$name" </dev/null 2>/dev/null \
-    | openssl x509 -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2
+  for attempt in 1 2 3; do
+    got=$(timeout 10 openssl s_client "${flags[@]}" -connect "$target" -servername "$name" </dev/null 2>/dev/null \
+      | openssl x509 -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2)
+    if [ -n "$got" ]; then echo "$got"; return 0; fi
+    [ "$attempt" = 3 ] || sleep 2
+  done
 }
 
 restart_hickory() {
