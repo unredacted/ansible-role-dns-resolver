@@ -20,4 +20,6 @@
     state: restarted
     daemon_reload: true
   listen: Restart the DNS services
-  when: dns_resolver_dnscrypt_enabled
+  when:
+    - dns_resolver_dnscrypt_enabled
+    - dns_resolver_edns_unit.stat.exists | default(false) or dns_resolver_edns_unit_installed | default(false)
