@@ -204,7 +204,9 @@
         +tls-hostname={{ hostnames[0] }} +timeout=8 +retry=1 {{ item.flags }} {{ item.name }} A
       loop:
         - { id: signed_do, name: ietf.org, flags: "+dnssec" }
-        - { id: signed_plain, name: ietf.org, flags: "" }
+        # kdig sets the AD bit in queries by default; +noadflag sends a plain
+        # query (DO=0, AD=0), which must get an answer without AD.
+        - { id: signed_plain, name: ietf.org, flags: "+noadflag" }
         - { id: signed_adflag, name: ietf.org, flags: "+adflag" }
         - { id: bogus, name: dnssec-failed.org, flags: "+dnssec" }
         - { id: bogus_cd, name: dnssec-failed.org, flags: "+dnssec +cdflag" }
