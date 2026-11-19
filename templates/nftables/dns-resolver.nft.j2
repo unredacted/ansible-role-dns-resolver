@@ -7,7 +7,7 @@
 {% set v6 = dns_resolver_listen_v6 %}
 {% set service_ports = ([dns_resolver_doh_port, dns_resolver_dot_port, dns_resolver_doq_port]
                         + ([dns_resolver_dnscrypt_port] if dns_resolver_dnscrypt_enabled else [])) | unique | sort %}
-{% set metrics_ports = [dns_resolver_hickory_metrics_port] + ([dns_resolver_dnscrypt_metrics_port] if dns_resolver_dnscrypt_enabled else []) %}
+{% set metrics_ports = ([dns_resolver_hickory_metrics_port] + ([dns_resolver_dnscrypt_metrics_port] if dns_resolver_dnscrypt_enabled else []) + dns_resolver_metrics_extra_tcp_ports) | unique %}
 {% set mgmt_if = ('iifname "' ~ dns_resolver_mgmt_interface ~ '" ') if dns_resolver_mgmt_interface | length > 0 else '' %}
 {% set deny4 = ['0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12',
                 '192.0.0.0/24', '192.0.2.0/24', '192.168.0.0/16', '198.18.0.0/15', '198.51.100.0/24',

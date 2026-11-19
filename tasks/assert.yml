@@ -82,3 +82,14 @@
     dns_resolver_disk_swap: >-
       {{ (dns_resolver_proc_swaps.content | b64decode).splitlines()[1:]
          | map('split') | map('first') | reject('match', '^/dev/zram') | list }}
+
+- name: Check the extra metrics ports
+  ansible.builtin.assert:
+    that:
+      - dns_resolver_metrics_extra_tcp_ports is sequence
+      - dns_resolver_metrics_extra_tcp_ports is not string
+      - dns_resolver_metrics_extra_tcp_ports is not mapping
+      - dns_resolver_metrics_extra_tcp_ports | map('int') | select('ge', 1) | select('le', 65535) | list | length
+        == dns_resolver_metrics_extra_tcp_ports | length
+    fail_msg: dns_resolver_metrics_extra_tcp_ports must be a list of TCP port numbers.
+    quiet: true

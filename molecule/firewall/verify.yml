@@ -22,6 +22,19 @@
       changed_when: false
       failed_when: dns_resolver_verify_elements.rc != 1
 
+    - name: List the input chain
+      ansible.builtin.command: nft list chain inet dns_resolver input
+      register: dns_resolver_verify_input
+      changed_when: false
+
+    - name: Check that the extra metrics port is open to the metrics sources only
+      ansible.builtin.assert:
+        that:
+          - dns_resolver_verify_input.stdout is search('saddr @metrics4 tcp dport [{][^}]*[ ,]9100[ ,}]')
+          - dns_resolver_verify_input.stdout is search('saddr @metrics6 tcp dport [{][^}]*[ ,]9100[ ,}]')
+          - dns_resolver_verify_input.stdout_lines | select('search', '[ ,{]9100[ ,}]') | reject('search', 'saddr @metrics[46]') | list | length == 0
+        quiet: true
+
     - name: Apply a public policy whose checks fail on purpose
       block:
         - name: Run the role with failing firewall checks
