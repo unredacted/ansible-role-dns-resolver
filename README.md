@@ -98,10 +98,12 @@ for each one.
 | `dns_resolver_mgmt_udp_ports` | `[]` | UDP ports to accept from anywhere, such as a VPN port. |
 | `dns_resolver_metrics_listen` | `127.0.0.1` | Address of the metrics endpoints. |
 | `dns_resolver_metrics_allowed_sources_v4` / `_v6` | `[]` | Who may scrape metrics. |
+| `dns_resolver_metrics_extra_tcp_ports` | `[]` | Other ports open to those sources, such as node_exporter's 9100. |
 | `dns_resolver_meter_pps` / `_burst` | `300` / `600` | Packets per second per source (IPv6 per /64). |
 | `dns_resolver_conn_cap_per_source` | `32` | Open connections per source. |
 | `dns_resolver_tls_source` | `files` | Where the certificate comes from: `files` or `acme`. |
 | `dns_resolver_acme_provider` / `_env` | `""` / `{}` | lego DNS provider and its settings (`acme`). |
+| `dns_resolver_acme_exec_hook` | `""` | A DNS hook the role ships, for the `exec` provider: `cloudflare`. |
 | `dns_resolver_acme_email` | `""` | ACME account email (`acme`). |
 | `dns_resolver_cert_sync_oncalendar` | `*-*-* 03:00:00` | When to renew. Use a different time per server. |
 | `dns_resolver_tls_cert_src` / `_key_src` | `""` | Chain and key on the controller (`files` source). |
@@ -132,6 +134,23 @@ challenge, so the server needs no open port 80. A timer runs
    served certificate with the installed one. If they differ after a switch,
    the previous certificate is put back.
 4. A probe that gets no answer is reported, but never causes a restart.
+
+Debian's lego package is built without some of lego's DNS providers,
+Cloudflare among them, although `lego dnshelp` still lists them. lego then
+stops with "unrecognized DNS provider". For Cloudflare, use the hook the role
+ships:
+
+```yaml
+dns_resolver_acme_provider: exec
+dns_resolver_acme_exec_hook: cloudflare
+dns_resolver_acme_env:
+  CF_DNS_API_TOKEN: "{{ vault_cloudflare_token }}"
+```
+
+The token needs Zone:Read and DNS:Edit on the zone that holds the challenge
+records. With `_acme-challenge` CNAMEs into a zone used only for ACME, the
+token cannot change anything else. For another provider Debian leaves out,
+point `EXEC_PATH` in `dns_resolver_acme_env` at your own script.
 
 Results go to `dns_resolver_tls.prom` in the node_exporter textfile directory
 (`dns_resolver_tls_leaf_match`, `dns_resolver_tls_probe_success`,

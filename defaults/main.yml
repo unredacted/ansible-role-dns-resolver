@@ -55,6 +55,9 @@ dns_resolver_hickory_metrics_port: 9153
 dns_resolver_dnscrypt_metrics_port: 9154
 dns_resolver_metrics_allowed_sources_v4: []
 dns_resolver_metrics_allowed_sources_v6: []
+# Other TCP ports to open to the same sources on the management interface,
+# for example 9100 for node_exporter. The firewall drops them otherwise.
+dns_resolver_metrics_extra_tcp_ports: []
 # node_exporter textfile collector directory (Debian's default).
 dns_resolver_textfile_dir: /var/lib/prometheus/node-exporter
 
@@ -222,15 +225,26 @@ dns_resolver_dnscrypt_tasks_max: 1024
 
 # --- ACME (dns_resolver_tls_source: acme) -----------------------------------------
 
-# lego gets the certificate with a DNS-01 challenge. Any lego DNS provider
-# works; see https://go-acme.github.io/lego/dns/
+# lego gets the certificate with a DNS-01 challenge; see
+# https://go-acme.github.io/lego/dns/ for the providers. Debian's lego package
+# leaves out providers whose libraries Debian does not package, Cloudflare
+# among them, although "lego dnshelp" still lists them. For those, use lego's
+# exec provider: set dns_resolver_acme_provider to "exec" and either
+# dns_resolver_acme_exec_hook to a hook this role ships, or EXEC_PATH in
+# dns_resolver_acme_env to your own script.
 dns_resolver_acme_server: https://acme-v02.api.letsencrypt.org/directory
 dns_resolver_acme_email: ""
 dns_resolver_acme_provider: ""
 # The provider's settings and secrets, for example
-#   CF_DNS_API_TOKEN: "..."   (Cloudflare)
+#   CF_DNS_API_TOKEN: "..."   (the cloudflare hook)
 # Written to /etc/dns-resolver/acme.env, readable by root only.
 dns_resolver_acme_env: {}
+# A DNS hook shipped with the role, for dns_resolver_acme_provider: exec.
+#   cloudflare   Cloudflare API, standard-library Python. Needs
+#                CF_DNS_API_TOKEN in dns_resolver_acme_env, with Zone:Read
+#                and DNS:Edit on the zone that holds the challenge records.
+# The role installs it and sets EXEC_PATH. Empty: no hook.
+dns_resolver_acme_exec_hook: ""
 dns_resolver_acme_key_type: ec256
 # Resolvers lego asks to see the challenge record. Empty uses the system's.
 dns_resolver_acme_dns_resolvers: []

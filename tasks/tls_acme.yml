@@ -5,11 +5,32 @@
       - dns_resolver_acme_email | length > 0
       - dns_resolver_acme_provider | length > 0
       - dns_resolver_acme_env is mapping
+      - dns_resolver_acme_exec_hook in ['', 'cloudflare']
+      - not dns_resolver_acme_exec_hook or dns_resolver_acme_provider == 'exec'
     fail_msg: >-
       With dns_resolver_tls_source "acme", set dns_resolver_acme_email,
       dns_resolver_acme_provider (a lego DNS provider) and
-      dns_resolver_acme_env (its settings).
+      dns_resolver_acme_env (its settings). dns_resolver_acme_exec_hook must
+      be empty or "cloudflare", and needs dns_resolver_acme_provider "exec".
     quiet: true
+
+- name: Create the ACME hook directory
+  ansible.builtin.file:
+    path: /usr/local/libexec/dns-resolver/acme-hooks
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: dns_resolver_acme_exec_hook | length > 0
+
+- name: Install the ACME DNS hook
+  ansible.builtin.copy:
+    src: "acme-hooks/{{ dns_resolver_acme_exec_hook }}.py"
+    dest: "/usr/local/libexec/dns-resolver/acme-hooks/{{ dns_resolver_acme_exec_hook }}.py"
+    owner: root
+    group: root
+    mode: "0755"
+  when: dns_resolver_acme_exec_hook | length > 0
 
 - name: Create the certificate directories
   ansible.builtin.file:
