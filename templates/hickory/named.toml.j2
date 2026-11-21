@@ -1,6 +1,6 @@
 # {{ ansible_managed }}
 # Hickory DNS: recursive resolver with DNSSEC validation.
-# Serves DNS-over-TLS, DNS-over-QUIC and DNS-over-HTTPS (POST only) on the
+# Serves DNS-over-TLS, DNS-over-QUIC and DNS-over-HTTPS (GET and POST) on the
 # public addresses. Plain DNS is only for programs on this host.
 
 listen_addrs_ipv4 = {{ (['127.0.0.1'] + dns_resolver_listen_v4) | to_json }}

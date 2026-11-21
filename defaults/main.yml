@@ -108,8 +108,10 @@ dns_resolver_allow_disk_swap: false
 # --- Hickory ------------------------------------------------------------------
 
 dns_resolver_doh_path: /dns-query
-# Hickory 0.26 answers DoH POST only. Set to true after upgrading to a release
-# that also answers GET; the tests then require GET to work.
+# Whether the pinned Hickory build answers DoH GET as well as POST. The tests
+# require GET to work when true, and to be refused when false. Set by the
+# release pull request together with the binary variables, from
+# hickory.doh_get in build/versions.yml.
 dns_resolver_doh_get_supported: false
 
 # Strict stops at the first NXDOMAIN (RFC 8020). Relaxed keeps going, which

@@ -18,7 +18,7 @@ The DNS software is written in Rust:
 
 - Installs pinned, checksummed builds of both programs.
 - Serves DNS-over-TLS (853/tcp), DNS-over-QUIC (853/udp), DNS-over-HTTPS
-  (443/tcp, POST only) and DNSCrypt (8443/udp and tcp).
+  (443/tcp, GET and POST) and DNSCrypt (8443/udp and tcp).
 - Prefers post-quantum key exchange (X25519MLKEM768) when the client supports
   it, and falls back to X25519 when it does not. For DNSCrypt, the
   post-quantum certificate (X-Wing) is too large for a small UDP answer, so
@@ -31,8 +31,7 @@ The DNS software is written in Rust:
 ## What it does not do
 
 - Plain DNS on port 53 to the public.
-- DNS-over-HTTPS with GET requests, or over HTTP/3. Hickory does not support
-  these yet.
+- DNS-over-HTTPS over HTTP/3. Hickory does not support this yet.
 - Filtering or blocklists.
 - Serving stale answers, a local copy of the root zone, or aggressive NSEC
   caching. Hickory does not support these yet.
@@ -42,9 +41,7 @@ The DNS software is written in Rust:
 These come from the upstream programs. We do not patch them. We pick up fixes
 when upstream releases them.
 
-- **DoH GET is refused.** Clients that send POST work. Some browser settings
-  use GET and will fail.
-- **Some names fail now and then.** Hickory 0.26.3 can return SERVFAIL for a
+- **Some names fail now and then.** Hickory 0.26 can return SERVFAIL for a
   few names with chains of unsigned delegations (for example
   `www.blogger.com`). A retry usually works. The fix is merged upstream but not
   released yet.
@@ -201,6 +198,11 @@ How a release is made:
   its own `Cargo.lock`. Its `src/main.rs` is an unmodified copy of upstream's
   entrypoint, and CI checks that it still matches. The wrapper exists so that
   Dependabot can propose dependency updates.
+- hickory-dns normally comes from a crates.io release. For now it comes from
+  a commit on upstream's `release/0.26` branch, because DoH GET support is
+  merged there but not released yet. That branch holds fixes the Hickory
+  maintainers have reviewed for 0.26.4. We go back to the crates.io release
+  once 0.26.4 is out.
 - encrypted-dns is built from the crates.io package, using the lockfile that
   ships with it. The version and the package checksum are in
   `build/versions.yml`.
@@ -224,6 +226,10 @@ Updates:
 To update hickory-dns itself, change the version in
 `build/hickory-dns/Cargo.toml` and `build/versions.yml`, and copy upstream's
 `bin/src/hickory-dns.rs` for that version into `build/hickory-dns/src/main.rs`.
+To go back to a crates.io release, also remove the `git` and `rev` keys from
+`build/hickory-dns/Cargo.toml`, put `upstream_tag` back in
+`build/versions.yml` in place of `upstream_ref`, and remove `allow-git` from
+`build/deny.toml`.
 
 ## Testing
 

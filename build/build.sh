@@ -30,6 +30,9 @@ PY
 
 target=$(yaml target)
 hickory_version=$(yaml hickory.version)
+# A release tag, or a branch and commit when built ahead of a release.
+hickory_source=$(yaml hickory.upstream_tag)
+[ -n "$hickory_source" ] || hickory_source="$(yaml hickory.upstream_ref) at $(yaml hickory.upstream_commit)"
 edns_version=$(yaml encrypted_dns.version)
 edns_sha=$(yaml encrypted_dns.crate_sha256)
 
@@ -82,7 +85,7 @@ mv encrypted-dns.cdx.json "$out/sbom/"
 cd "$out"
 cp /src/build/native-inventory.md "$out/"
 {
-  echo "hickory-dns ${hickory_version}"
+  echo "hickory-dns ${hickory_version} (upstream ${hickory_source})"
   echo "encrypted-dns ${edns_version}"
   echo "target ${target}"
   rustc --version
