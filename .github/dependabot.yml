@@ -37,6 +37,11 @@ updates:
     directory: /build/hickory-dns
     schedule:
       interval: weekly
+    # hickory-dns is pinned to a commit on upstream's release/0.26 branch
+    # until 0.26.4 is released. Dependabot would move it to the default
+    # branch, so leave the Hickory crates alone. Remove this then.
+    ignore:
+      - dependency-name: 'hickory-*'
     groups:
       hickory-dns:
         patterns: ['*']

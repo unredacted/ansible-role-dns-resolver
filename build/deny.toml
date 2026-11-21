@@ -40,3 +40,6 @@ allow = [
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+# Until Hickory 0.26.4 is released, hickory-dns is built from a commit on
+# upstream's release/0.26 branch (see build/versions.yml). Remove this then.
+allow-git = ["https://github.com/hickory-dns/hickory-dns"]

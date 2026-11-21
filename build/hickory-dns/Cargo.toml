@@ -3,7 +3,12 @@
 # This crate exists so the binary is built from a lockfile that lives in this
 # repository, which lets Dependabot propose dependency updates. It does not
 # change Hickory's code: src/main.rs is an unmodified copy of upstream's
-# bin/src/hickory-dns.rs at the version below, and CI checks that it still is.
+# bin/src/hickory-dns.rs at the commit below, and CI checks that it still is.
+#
+# Until 0.26.4 is released, hickory-dns comes from a commit on upstream's
+# release/0.26 branch instead of crates.io, for DoH GET support. The version
+# in that source tree is still 0.26.3. Switch back to the crates.io release
+# once it is out (see build/versions.yml).
 [package]
 name = "hickory-dns-build"
 version = "0.26.3"
@@ -17,7 +22,7 @@ name = "hickory-dns"
 path = "src/main.rs"
 
 [dependencies]
-hickory-dns = { version = "=0.26.3", default-features = false, features = [
+hickory-dns = { version = "=0.26.3", git = "https://github.com/hickory-dns/hickory-dns", rev = "d896ba39149c4d26d4d1138e79023287ef46949b", default-features = false, features = [
   "recursor",
   "prometheus-metrics",
   "systemd",
@@ -36,9 +41,12 @@ tracing = { version = "0.1.30", default-features = false }
 tracing-subscriber = { version = "0.3.10", default-features = false, features = ["env-filter", "fmt", "std"] }
 
 [lints.rust]
-# The copied entrypoint has an optional jemalloc allocator behind a feature
-# this wrapper does not define. Declare it so the check does not warn.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("jemalloc"))'] }
+# The copied entrypoint has code behind features this wrapper does not define:
+# an optional jemalloc allocator, and (from 0.26.4) sending logs straight to
+# the systemd journal. Leaving `systemd` undefined here keeps logs on stdout,
+# which systemd writes to the role's journal namespace. Declare both so the
+# check does not warn.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("jemalloc", "systemd"))'] }
 
 [profile.release]
 codegen-units = 1

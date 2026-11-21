@@ -6,8 +6,11 @@ target: x86_64-unknown-linux-gnu
 hickory:
   # Must match the hickory-dns version in build/hickory-dns/Cargo.toml.
   version: 0.26.3
-  upstream_tag: v0.26.3
-  upstream_commit: bd37cafbdd86112a6da32878f8c9bab22e14377e
+  # Normally a release tag. Until 0.26.4 is released this is upstream's
+  # release/0.26 branch, for DoH GET support (hickory-dns#4197). The commit
+  # must be on that branch and match the rev in build/hickory-dns/Cargo.toml.
+  upstream_ref: release/0.26
+  upstream_commit: d896ba39149c4d26d4d1138e79023287ef46949b
 
 encrypted_dns:
   version: 0.9.22
