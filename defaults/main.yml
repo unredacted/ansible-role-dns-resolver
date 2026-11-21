@@ -80,11 +80,11 @@ dns_resolver_firewall_rollback_seconds: 180
 
 # Release of this repository that provides the binaries. A CI workflow updates
 # these five values together after each release.
-dns_resolver_binary_release: "binaries-20261118-e9832e8"
-dns_resolver_hickory_url: "https://github.com/unredacted/ansible-role-dns-resolver/releases/download/binaries-20261118-e9832e8/hickory-dns"
-dns_resolver_hickory_sha256: "9ad2a970a46175d7a28d6230231f706bef934bf28ac447566c6f1c62cc1553f3"
-dns_resolver_encrypted_dns_url: "https://github.com/unredacted/ansible-role-dns-resolver/releases/download/binaries-20261118-e9832e8/encrypted-dns"
-dns_resolver_encrypted_dns_sha256: "52db9f32ee5d7fd12c00e3ffc4da06ebe3985f3d36119b6729e211d20414be8f"
+dns_resolver_binary_release: "binaries-20261121-edb7902"
+dns_resolver_hickory_url: "https://github.com/unredacted/ansible-role-dns-resolver/releases/download/binaries-20261121-edb7902/hickory-dns"
+dns_resolver_hickory_sha256: "68ef618e82ce1aec67b1cf74b583a87d12f5aaad8218adaea0104ce2a6b9e019"
+dns_resolver_encrypted_dns_url: "https://github.com/unredacted/ansible-role-dns-resolver/releases/download/binaries-20261121-edb7902/encrypted-dns"
+dns_resolver_encrypted_dns_sha256: "45de2fc385387ffa00c4a66cec4c9ac680b5d13ad10f71084a312f8ca8e14521"
 # Paths on the controller. When set, these files are copied instead of
 # downloading from the release.
 dns_resolver_hickory_src: ""
@@ -112,7 +112,7 @@ dns_resolver_doh_path: /dns-query
 # require GET to work when true, and to be refused when false. Set by the
 # release pull request together with the binary variables, from
 # hickory.doh_get in build/versions.yml.
-dns_resolver_doh_get_supported: false
+dns_resolver_doh_get_supported: true
 
 # Strict stops at the first NXDOMAIN (RFC 8020). Relaxed keeps going, which
 # works better with broken name servers.
