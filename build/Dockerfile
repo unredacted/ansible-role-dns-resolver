@@ -1,7 +1,7 @@
 # Build environment for the release binaries.
 # The Rust image is the official Debian 13 (trixie) variant, pinned by digest.
 # Dependabot proposes new versions.
-FROM rust:1.99.1-slim-trixie@sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7
+FROM rust:1.100.0-slim-trixie@sha256:6f14b2b4b278ec0d50aa1d69541c304ce0f95e0f6268487aa9924af1c2e9aebe
 
 ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_TERM_COLOR=never \
