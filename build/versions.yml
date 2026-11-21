@@ -11,6 +11,10 @@ hickory:
   # must be on that branch and match the rev in build/hickory-dns/Cargo.toml.
   upstream_ref: release/0.26
   upstream_commit: d896ba39149c4d26d4d1138e79023287ef46949b
+  # Whether this build answers DoH GET as well as POST. Molecule checks it
+  # against the binaries built from these inputs, and the release pull request
+  # copies it to dns_resolver_doh_get_supported in defaults/main.yml.
+  doh_get: true
 
 encrypted_dns:
   version: 0.9.22

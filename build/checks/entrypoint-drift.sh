@@ -34,14 +34,13 @@ if [ -n "$tag" ]; then
 elif [ -n "$ref" ]; then
   grep -q "^hickory-dns = {.* git = \"${repo}\", rev = \"${commit}\"" build/hickory-dns/Cargo.toml \
     || { echo "build/hickory-dns/Cargo.toml does not pin ${repo} at rev ${commit}" >&2; exit 1; }
-  # "behind" or "identical" means the commit is on the branch.
-  status=$(curl -fsSL --retry 5 -H 'Accept: application/vnd.github+json' \
-    "https://api.github.com/repos/hickory-dns/hickory-dns/compare/${ref}...${commit}" \
-    | python3 -c 'import json, sys; print(json.load(sys.stdin)["status"])')
-  case "$status" in
-    behind|identical) ;;
-    *) echo "commit ${commit} is not on upstream ${ref} (compare status: ${status})" >&2; exit 1 ;;
-  esac
+  # Fetch the branch's commits only (no trees or files) and check that the
+  # commit is one of them. Plain git, so no API rate limits.
+  history=$(mktemp -d)
+  git -C "$history" init -q
+  git -C "$history" fetch -q --filter=tree:0 "${repo}.git" "refs/heads/${ref}"
+  git -C "$history" merge-base --is-ancestor "$commit" FETCH_HEAD 2>/dev/null \
+    || { echo "commit ${commit} is not on upstream ${ref}" >&2; exit 1; }
   source="${ref} at ${commit}"
 else
   echo "build/versions.yml needs hickory.upstream_tag or hickory.upstream_ref" >&2

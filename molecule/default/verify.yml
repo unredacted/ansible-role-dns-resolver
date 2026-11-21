@@ -141,8 +141,10 @@
         or (doh_post.stdout | from_json).answers < 1
         or not (doh_post.stdout | from_json).ad
 
-    # dns_resolver_doh_get_supported comes from the role defaults: false means
-    # GET must be refused, true means it must answer like POST.
+    # false means GET must be refused, true means it must answer like POST.
+    # Binaries built in CI are checked against the build inputs
+    # (hickory.doh_get in build/versions.yml); the pinned release against
+    # dns_resolver_doh_get_supported in the role defaults.
     - name: DoH GET matches dns_resolver_doh_get_supported
       ansible.builtin.command: >-
         {{ in_client }} python3 /root/doh_query.py {{ hostnames[0] }} {{ resolver_v4 }} ietf.org GET {{ ca }}
@@ -153,9 +155,14 @@
         or (get_supported and (doh_get.stdout | from_json).rcode != 0)
       vars:
         get_supported: >-
-          {{ (lookup('ansible.builtin.file',
-                     lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') ~ '/defaults/main.yml')
-              | from_yaml).dns_resolver_doh_get_supported | bool }}
+          {{ (((lookup('ansible.builtin.file',
+                       lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') ~ '/build/versions.yml')
+                | from_yaml).hickory.doh_get | default(false))
+              if lookup('ansible.builtin.env', 'DNS_RESOLVER_ARTIFACTS')
+              else (lookup('ansible.builtin.file',
+                           lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') ~ '/defaults/main.yml')
+                    | from_yaml).dns_resolver_doh_get_supported)
+             | bool }}
 
     # --- Post-quantum key exchange -------------------------------------------
 
