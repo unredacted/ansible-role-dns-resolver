@@ -24,7 +24,7 @@
             'stamp': 'dot' | dns_resolver_stamp(address, dns_resolver_dot_port, hostname=dns_resolver_hostnames[0])}) -%}
       {%- set _ = out.append({'protocol': 'DoQ', 'address': address,
             'stamp': 'doq' | dns_resolver_stamp(address, dns_resolver_doq_port, hostname=dns_resolver_hostnames[0])}) -%}
-      {%- set _ = out.append({'protocol': 'DoH (POST)', 'address': address,
+      {%- set _ = out.append({'protocol': 'DoH' if dns_resolver_doh_get_supported | bool else 'DoH (POST)', 'address': address,
             'stamp': 'doh' | dns_resolver_stamp(address, dns_resolver_doh_port, hostname=dns_resolver_hostnames[0],
                                                 path=dns_resolver_doh_path)}) -%}
       {%- if dns_resolver_dnscrypt_enabled and dns_resolver_pubkey | length == 64 -%}
